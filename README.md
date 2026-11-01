@@ -2,31 +2,21 @@
 
 Faith Finance is an Android app for tracking video uploads. Each video is stored once in a main content library and is tracked separately on four platforms: **YouTube, Instagram, Facebook and TikTok**.
 
-## Keep your videos in the app
+## How it works
 
-- **From the gallery:** in **+ New Video**, choose the video and thumbnail from your phone's gallery. The title is filled from the file name if empty.
-- **Add video file:** you can also add or change the video later. A copy is saved inside the app and plays there.
-- **Thumbnail:** choose an image. It is shown with the video and in the library list.
-- **Title, description and hashtags** are kept with the video. "Copy to all 4 platforms" fills every platform with them.
-- **Checklist section** (☑ button in the bottom bar): every video you add appears there automatically with 4 checkboxes, one per platform.
-- **Share video to YouTube / Instagram / Facebook / TikTok** opens that app with the video and copies the caption to the clipboard.
+- **Separate platforms:** every video belongs to one platform (YouTube, Instagram, Facebook or TikTok). A video added in the Instagram section stays in Instagram, with its own title, description, hashtags, video file and thumbnail.
+- **From the gallery:** in **+ New Video**, choose the platform, then the video and thumbnail from your phone's gallery. A copy is kept inside the app.
+- **Checklist** (☑ in the bottom bar): every video appears there automatically, grouped by platform, with its own checkbox.
+- Each video has: upload checkbox, status, scheduled date and time, published URL and reminder notification. Overdue videos are marked.
+- **Library** shows all videos with a count per platform.
 
-Because the app keeps its own copy of each video, it uses extra phone storage. Uninstalling the app deletes the saved videos and data.
+## Connect YouTube (auto upload)
 
-## Shared video feature
+Tap the 🔗 button (Connected accounts). Follow the setup guide in the app once: create a free Google Cloud project, enable *YouTube Data API v3*, create an OAuth client of type **Desktop app**, and paste its Client ID and secret. Then open a YouTube video and tap **Upload to YouTube**: the video, thumbnail, title, description and hashtags are sent to your channel. Progress shows in a notification, so you can leave the app.
 
-- Creating a video adds **one** record to the library. The YouTube, Instagram, Facebook and TikTok sections all show that same record, so there are no duplicate entries.
-- Each platform has its own fields for that video:
-  - Upload checkbox
-  - Upload status (Pending / Scheduled / Uploaded / Failed)
-  - Scheduled date and time
-  - Title
-  - Description and hashtags
-  - Published video URL
-  - Reminder notification (at the scheduled time, or 15 min, 30 min, 1 hour or 1 day before it)
-- Ticking **Uploaded** on one platform completes only that platform. The other platforms stay pending until you tick them yourself.
-- Each video shows its combined progress, for example **2/4 platforms completed**.
-- If a scheduled time passes and the video is still not uploaded on that platform, it is marked **Overdue**.
+Important: YouTube keeps videos uploaded from an unverified API project **private** until the project passes Google's YouTube API Services audit.
+
+Instagram, Facebook and TikTok auto upload are not built yet. For those, use **Share to … app**: it opens the app with the video and copies the caption.
 
 ## Download the APK
 

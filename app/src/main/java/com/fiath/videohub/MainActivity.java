@@ -64,6 +64,8 @@ public class MainActivity extends Activity {
         s.setMediaPlaybackRequiresUserGesture(true);
 
         webView.addJavascriptInterface(new Bridge(), "Android");
+        YouTubeUploadService.listener = json ->
+                js("window.onYtUpload && window.onYtUpload(" + JSONObject.quote(json) + ")");
         webView.setWebViewClient(new WebViewClient() {
             @Override
             public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
@@ -94,6 +96,18 @@ public class MainActivity extends Activity {
     }
 
     @Override
+    protected void onResume() {
+        super.onResume();
+        if (pageLoaded) js("window.onAppResume && window.onAppResume()");
+    }
+
+    @Override
+    protected void onDestroy() {
+        YouTubeUploadService.listener = null;
+        super.onDestroy();
+    }
+
+    @Override
     protected void onSaveInstanceState(Bundle out) {
         super.onSaveInstanceState(out);
         out.putString("pickVideoId", pickVideoId);
@@ -104,6 +118,10 @@ public class MainActivity extends Activity {
     protected void onNewIntent(Intent intent) {
         super.onNewIntent(intent);
         setIntent(intent);
+        if (intent.getData() != null && "faithfinance".equals(intent.getData().getScheme())) {
+            if (pageLoaded) js("window.onAppResume && window.onAppResume()");
+            return;
+        }
         String id = intent.getStringExtra(EXTRA_REMINDER_ID);
         if (id != null) {
             pendingReminderId = id;
@@ -354,6 +372,51 @@ public class MainActivity extends Activity {
         @JavascriptInterface
         public void shareVideo(String path, String platform, String caption) {
             runOnUiThread(() -> shareFile(path, platform, caption));
+        }
+
+        // ----- YouTube -----
+        @JavascriptInterface
+        public String ytStatus() {
+            return YouTubeApi.status(getApplicationContext()).toString();
+        }
+
+        @JavascriptInterface
+        public void ytSaveConfig(String clientId, String clientSecret) {
+            YouTubeApi.saveConfig(getApplicationContext(), clientId, clientSecret);
+        }
+
+        @JavascriptInterface
+        public void ytConnect() {
+            YouTubeApi.connect(MainActivity.this,
+                    url -> runOnUiThread(() -> openExternal(url)),
+                    error -> {
+                        JSONObject s = YouTubeApi.status(getApplicationContext());
+                        try {
+                            if (error != null) s.put("error", error);
+                        } catch (Exception ignored) {
+                        }
+                        js("window.onYtStatus && window.onYtStatus(" + JSONObject.quote(s.toString()) + ")");
+                    });
+        }
+
+        @JavascriptInterface
+        public void ytDisconnect() {
+            YouTubeApi.disconnect(getApplicationContext());
+        }
+
+        @JavascriptInterface
+        public void ytUpload(String jobJson) {
+            runOnUiThread(() -> YouTubeUploadService.enqueue(MainActivity.this, jobJson));
+        }
+
+        @JavascriptInterface
+        public String ytJobs() {
+            return YouTubeUploadService.allJobs(getApplicationContext());
+        }
+
+        @JavascriptInterface
+        public void ytClearJob(String appId) {
+            YouTubeUploadService.clearJob(getApplicationContext(), appId);
         }
 
         @JavascriptInterface

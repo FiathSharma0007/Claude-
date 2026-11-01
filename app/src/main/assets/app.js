@@ -1,4 +1,4 @@
-/* VideoHub: one shared video library, tracked separately on 4 platforms. */
+/* Faith Finance: each video belongs to ONE platform (YouTube, Instagram, Facebook or TikTok). */
 (function () {
   'use strict';
 
@@ -22,131 +22,119 @@
     { v: 60, name: '1 hour before' },
     { v: 1440, name: '1 day before' }
   ];
+  var PRIVACY = [
+    { k: 'public', n: 'Public' },
+    { k: 'unlisted', n: 'Unlisted' },
+    { k: 'private', n: 'Private' }
+  ];
 
   var native = window.Android || null;
+  // ui.tab: library | checklist | youtube | instagram | facebook | tiktok ; ui.page: null | 'accounts'
+  var ui = { tab: 'library', page: null, videoId: null, filters: {}, draft: null, copying: null };
   var data = load();
-  var ui = { tab: 'library', videoId: null, focus: null, filters: {}, draft: null, copying: null };
 
-  // ---------- storage ----------
+  // ---------- storage + migration ----------
   function load() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) {
-        var d = JSON.parse(raw);
-        if (d && Array.isArray(d.videos)) {
-          d.videos.forEach(ensurePlatforms);
-          return d;
-        }
-      }
-    } catch (e) { /* ignore */ }
-    return { videos: [] };
+    var d = null;
+    try { d = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { d = null; }
+    if (!d || !Array.isArray(d.videos)) return { version: 2, videos: [] };
+    if (d.version !== 2) d = migrateV1(d);
+    d.videos.forEach(normalize);
+    return d;
+  }
+  // v1: one shared video with 4 platform entries -> v2: one separate video per platform.
+  function migrateV1(old) {
+    var out = { version: 2, videos: [] };
+    old.videos.forEach(function (v) {
+      if (!v.platforms) return;
+      PLATFORMS.forEach(function (p) {
+        var pe = v.platforms[p.key];
+        if (!pe) return;
+        if (native) native.cancelReminder(v.id + '__' + p.key);
+        out.videos.push({
+          id: v.id + '_' + p.key,
+          platform: p.key,
+          title: pe.title || v.title,
+          description: pe.description != null ? pe.description : v.description,
+          hashtags: pe.hashtags != null ? pe.hashtags : v.hashtags,
+          video: v.video || null,
+          thumb: v.thumb || null,
+          status: pe.status || 'pending',
+          scheduledAt: pe.scheduledAt || '',
+          url: pe.url || '',
+          reminder: pe.reminder !== false,
+          reminderLead: pe.reminderLead != null ? pe.reminderLead : 30,
+          uploadedAt: pe.uploadedAt || null,
+          createdAt: v.createdAt || Date.now()
+        });
+      });
+    });
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(out)); } catch (e) { /* ignore */ }
+    return out;
+  }
+  function normalize(v) {
+    if (!v.status) v.status = 'pending';
+    if (v.scheduledAt == null) v.scheduledAt = '';
+    if (v.url == null) v.url = '';
+    if (v.reminder == null) v.reminder = true;
+    if (v.reminderLead == null) v.reminderLead = 30;
+    if (!v.privacy) v.privacy = 'public';
   }
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(data)); } catch (e) { toast('Could not save'); }
   }
   var saveTimer = null;
-  function saveSoon() {
-    clearTimeout(saveTimer);
-    saveTimer = setTimeout(save, 300);
-  }
+  function saveSoon() { clearTimeout(saveTimer); saveTimer = setTimeout(save, 300); }
 
   // ---------- model ----------
   function uid() { return Date.now().toString(36) + Math.random().toString(36).slice(2, 8); }
-
-  function newPlatformEntry(v) {
-    return {
-      status: 'pending',
-      scheduledAt: '',
-      title: v.title,
-      description: v.description,
-      hashtags: v.hashtags,
-      url: '',
-      reminder: true,
-      reminderLead: 30,
-      uploadedAt: null
-    };
+  function findVideo(id) {
+    for (var i = 0; i < data.videos.length; i++) if (data.videos[i].id === id) return data.videos[i];
+    return null;
   }
-
-  // Every video has exactly one entry per platform, inside the single video record.
-  function ensurePlatforms(v) {
-    v.platforms = v.platforms || {};
-    PLATFORMS.forEach(function (p) {
-      if (!v.platforms[p.key]) v.platforms[p.key] = newPlatformEntry(v);
-    });
+  function pname(key) {
+    for (var i = 0; i < PLATFORMS.length; i++) if (PLATFORMS[i].key === key) return PLATFORMS[i].name;
+    return key;
   }
+  function isPlatform(key) { return PLATFORMS.some(function (p) { return p.key === key; }); }
+  function isOverdue(v) {
+    if (v.status === 'uploaded' || !v.scheduledAt) return false;
+    return new Date(v.scheduledAt).getTime() < Date.now();
+  }
+  function videosOf(key) { return data.videos.filter(function (v) { return v.platform === key; }); }
 
-  function createVideo(title, description, hashtags, draft) {
+  function createVideo(platform, title, description, hashtags, draft) {
     var v = {
       id: draft && draft.id ? draft.id : uid(),
-      title: title,
-      description: description,
-      hashtags: hashtags,
+      platform: platform,
+      title: title, description: description, hashtags: hashtags,
       video: draft && draft.video ? draft.video : null,
       thumb: draft && draft.thumb ? draft.thumb : null,
       createdAt: Date.now()
     };
-    ensurePlatforms(v);
+    normalize(v);
     data.videos.push(v);
     save();
     return v;
   }
 
-  function findVideo(id) {
-    for (var i = 0; i < data.videos.length; i++) if (data.videos[i].id === id) return data.videos[i];
-    return null;
-  }
-
-  function doneCount(v) {
-    return PLATFORMS.filter(function (p) { return v.platforms[p.key].status === 'uploaded'; }).length;
-  }
-
-  function isOverdue(pe) {
-    if (pe.status === 'uploaded' || !pe.scheduledAt) return false;
-    return new Date(pe.scheduledAt).getTime() < Date.now();
-  }
-
-  function platformName(key) {
-    for (var i = 0; i < PLATFORMS.length; i++) if (PLATFORMS[i].key === key) return PLATFORMS[i].name;
-    return key;
-  }
-
-  // Marks ONE platform uploaded / not uploaded. Other platforms are untouched.
-  function setUploaded(v, key, uploaded) {
-    var pe = v.platforms[key];
-    if (uploaded) {
-      pe.status = 'uploaded';
-      pe.uploadedAt = Date.now();
-    } else {
-      pe.status = pe.scheduledAt ? 'scheduled' : 'pending';
-      pe.uploadedAt = null;
-    }
+  function setUploaded(v, uploaded) {
+    if (uploaded) { v.status = 'uploaded'; v.uploadedAt = Date.now(); }
+    else { v.status = v.scheduledAt ? 'scheduled' : 'pending'; v.uploadedAt = null; }
     save();
-    syncReminder(v, key);
+    syncReminder(v);
   }
 
   // ---------- reminders ----------
-  function reminderId(v, key) { return v.id + '__' + key; }
-
-  function syncReminder(v, key) {
+  function syncReminder(v) {
     if (!native) return;
-    var pe = v.platforms[key];
-    var id = reminderId(v, key);
-    var at = pe.scheduledAt ? new Date(pe.scheduledAt).getTime() - (pe.reminderLead || 0) * 60000 : NaN;
-    if (pe.reminder && pe.status !== 'uploaded' && !isNaN(at) && at > Date.now()) {
-      var t = pe.title || v.title;
-      native.scheduleReminder(id, at,
-        'Upload reminder · ' + platformName(key),
-        '"' + t + '" is scheduled for ' + platformName(key) + ' at ' + fmtDate(pe.scheduledAt) + '.');
+    var at = v.scheduledAt ? new Date(v.scheduledAt).getTime() - (v.reminderLead || 0) * 60000 : NaN;
+    if (v.reminder && v.status !== 'uploaded' && !isNaN(at) && at > Date.now()) {
+      native.scheduleReminder(v.id, at, 'Upload reminder · ' + pname(v.platform),
+        '"' + v.title + '" is scheduled for ' + pname(v.platform) + ' at ' + fmtDate(v.scheduledAt) + '.');
     } else {
-      native.cancelReminder(id);
+      native.cancelReminder(v.id);
     }
-  }
-  function syncAllReminders() {
-    data.videos.forEach(function (v) { PLATFORMS.forEach(function (p) { syncReminder(v, p.key); }); });
-  }
-  function cancelAllReminders(v) {
-    if (!native) return;
-    PLATFORMS.forEach(function (p) { native.cancelReminder(reminderId(v, p.key)); });
   }
 
   // ---------- helpers ----------
@@ -163,48 +151,82 @@
   }
   var toastTimer = null;
   function toast(msg) {
-    var t = document.getElementById('toast');
+    var t = $('toast');
     t.textContent = msg;
     t.classList.remove('hidden');
     clearTimeout(toastTimer);
-    toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 2200);
+    toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 2600);
   }
   function $(id) { return document.getElementById(id); }
-  function mediaSrc(path) {
-    return /^(blob:|https?:|file:|data:)/.test(path) ? path : 'file://' + path;
-  }
+  function mediaSrc(path) { return /^(blob:|https?:|file:|data:)/.test(path) ? path : 'file://' + path; }
   function fmtSize(b) {
     if (!b) return '';
     if (b > 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
     if (b > 1048576) return (b / 1048576).toFixed(1) + ' MB';
     return Math.max(1, Math.round(b / 1024)) + ' KB';
   }
-  function caption(v, key) {
-    var pe = v.platforms[key];
-    return [pe.title || v.title, pe.description, pe.hashtags]
-      .filter(function (x) { return x && String(x).trim(); }).join('\n\n');
+  function caption(v) {
+    return [v.title, v.description, v.hashtags].filter(function (x) { return x && String(x).trim(); }).join('\n\n');
   }
   function copyText(text) {
     if (native) { native.copyText(text); return; }
     if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { toast('Copied'); });
   }
+  function statusPill(v) {
+    if (isOverdue(v)) return '<span class="pill overdue">Overdue</span>';
+    var s = STATUSES.filter(function (x) { return x.key === v.status; })[0];
+    return '<span class="pill ' + v.status + '">' + esc(s ? s.name : v.status) + '</span>';
+  }
+  function badge(key) {
+    return '<span class="pbadge ' + key + '"><span class="dot ' + key + '"></span>' + pname(key) + '</span>';
+  }
+  function chips(tabKey, options) {
+    var cur = ui.filters[tabKey] || 'all';
+    return '<div class="chips">' + options.map(function (o) {
+      return '<button class="chip' + (o.k === cur ? ' active' : '') + '" data-filter="' + o.k + '">' + esc(o.n) + '</button>';
+    }).join('') + '</div>';
+  }
+  function thumbHtml(v, cls) {
+    return v.thumb && v.thumb.path
+      ? '<img class="' + cls + '" alt="" src="' + esc(mediaSrc(v.thumb.path)) + '">'
+      : '<div class="' + cls + ' none">' + (v.video ? '&#127909;' : 'No video') + '</div>';
+  }
+  function sortVideos(list) {
+    return list.sort(function (a, b) {
+      var ua = a.status === 'uploaded' ? 1 : 0, ub = b.status === 'uploaded' ? 1 : 0;
+      if (ua !== ub) return ua - ub;
+      var ta = a.scheduledAt ? new Date(a.scheduledAt).getTime() : Infinity;
+      var tb = b.scheduledAt ? new Date(b.scheduledAt).getTime() : Infinity;
+      if (ta !== tb) return ta - tb;
+      return b.createdAt - a.createdAt;
+    });
+  }
+  function subline(v) {
+    if (v.status === 'uploaded') return 'Uploaded ' + fmtDate(v.uploadedAt);
+    if (v.scheduledAt) return 'Scheduled ' + fmtDate(v.scheduledAt);
+    return 'Not scheduled';
+  }
 
   // ---------- media (video file + thumbnail) ----------
-  function pickMedia(v, kind) {
+  function mediaInUse(path, exceptId) {
+    return data.videos.some(function (v) {
+      return v.id !== exceptId && ((v.video && v.video.path === path) || (v.thumb && v.thumb.path === path));
+    });
+  }
+  function deleteMedia(m, ownerId) {
+    if (m && m.path && native && !mediaInUse(m.path, ownerId)) native.deleteMedia(m.path);
+  }
+  function pickMedia(id, kind) {
     ui.copying = null;
-    if (native) { native.pickMedia(v.id, kind); return; }
-    // Browser fallback (for testing only; not saved after reload).
-    var inp = document.createElement('input');
+    if (native) { native.pickMedia(id, kind); return; }
+    var inp = document.createElement('input'); // browser fallback for testing
     inp.type = 'file';
     inp.accept = kind === 'video' ? 'video/*' : 'image/*';
     inp.onchange = function () {
       var f = inp.files && inp.files[0];
-      if (f) window.onMediaPicked(v.id, kind, URL.createObjectURL(f), f.name, f.size);
+      if (f) window.onMediaPicked(id, kind, URL.createObjectURL(f), f.name, f.size);
     };
     inp.click();
-  }
-  function deleteMedia(m) {
-    if (m && m.path && native) native.deleteMedia(m.path);
   }
   window.onMediaProgress = function (id, kind, pct) {
     var first = !ui.copying;
@@ -214,14 +236,14 @@
     var el = $('mediaProgress');
     if (first || !el) { render(); return; }
     el.querySelector('span').textContent = pct + '%';
-    el.querySelector('i').style.width = pct + '%';
+    var bar = el.querySelector('i');
+    if (bar) bar.style.width = pct + '%';
   };
   window.onMediaPicked = function (id, kind, path, name, size) {
     ui.copying = null;
     var field = kind === 'video' ? 'video' : 'thumb';
-    // Picked while filling the "New video" form
     if (ui.draft && ui.draft.id === id) {
-      deleteMedia(ui.draft[field]);
+      deleteMedia(ui.draft[field], id);
       ui.draft[field] = { path: path, name: name, size: size };
       if (kind === 'video' && !$('newTitle').value.trim()) {
         $('newTitle').value = String(name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
@@ -230,8 +252,8 @@
       return;
     }
     var v = findVideo(id);
-    if (!v) { if (native) native.deleteMedia(path); return; }
-    deleteMedia(v[field]);
+    if (!v) { if (native && !mediaInUse(path)) native.deleteMedia(path); return; }
+    deleteMedia(v[field], v.id);
     v[field] = { path: path, name: name, size: size };
     save();
     toast(kind === 'video' ? 'Video saved in the app' : 'Thumbnail saved');
@@ -240,14 +262,411 @@
   window.onMediaError = function (id, kind, msg) {
     ui.copying = null;
     toast('Could not save file: ' + msg);
-    if (ui.draft && ui.draft.id === id) renderDraftMedia();
-    else if (ui.videoId === id) render();
+    if (ui.draft && ui.draft.id === id) renderDraftMedia(); else if (ui.videoId === id) render();
   };
   window.onMediaCancel = function () {
     if (ui.copying) { ui.copying = null; if (ui.draft) renderDraftMedia(); else render(); }
   };
 
-  // Media row inside the "New video" form
+  // ---------- YouTube connection + upload ----------
+  function ytStatus() {
+    if (!native || !native.ytStatus) return { available: false };
+    try { var s = JSON.parse(native.ytStatus()); s.available = true; return s; } catch (e) { return { available: false }; }
+  }
+  window.onYtStatus = function (json) {
+    var s = {};
+    try { s = JSON.parse(json); } catch (e) { /* ignore */ }
+    if (s.error) toast('YouTube: ' + s.error);
+    else if (s.connected) toast('YouTube connected: ' + (s.channel || 'your channel'));
+    render();
+  };
+  function startYtUpload(v) {
+    var st = ytStatus();
+    if (!st.available) { toast('YouTube upload works in the Android app'); return; }
+    if (!st.connected) { toast('Connect your YouTube account first'); openAccounts(); return; }
+    if (!v.video || !v.video.path) { toast('Add the video file first'); return; }
+    if (!v.title.trim()) { toast('Add a title first'); return; }
+    var publishAt = '';
+    if (v.scheduledAt && new Date(v.scheduledAt).getTime() > Date.now() + 60000) {
+      publishAt = new Date(v.scheduledAt).toISOString();
+    }
+    var tags = (v.hashtags || '').split(/[\s,]+/).map(function (t) { return t.replace(/^#/, ''); })
+      .filter(function (t) { return t; });
+    var desc = [v.description, v.hashtags].filter(function (x) { return x && x.trim(); }).join('\n\n');
+    v.yt = { state: 'queued', pct: 0, msg: '' };
+    save();
+    native.ytUpload(JSON.stringify({
+      appId: v.id,
+      path: v.video.path,
+      thumbPath: v.thumb && v.thumb.path ? v.thumb.path : '',
+      title: v.title.slice(0, 100),
+      description: desc,
+      tags: tags,
+      privacy: v.privacy || 'public',
+      publishAt: publishAt
+    }));
+    render();
+  }
+  // state: queued | uploading | thumbnail | done | error
+  window.onYtUpload = function (json) {
+    var j;
+    try { j = JSON.parse(json); } catch (e) { return; }
+    var v = findVideo(j.appId);
+    if (!v) { if (native && native.ytClearJob) native.ytClearJob(j.appId); return; }
+    var prev = v.yt && v.yt.state;
+    v.yt = { state: j.state, pct: j.pct || 0, msg: j.msg || '', youtubeId: j.youtubeId || '' };
+    if (j.state === 'done') {
+      v.url = 'https://youtu.be/' + j.youtubeId;
+      if (v.status !== 'uploaded') setUploaded(v, true);
+      if (native && native.ytClearJob) native.ytClearJob(j.appId);
+      if (prev !== 'done') toast('Uploaded to YouTube' + (j.msg ? ' (' + j.msg + ')' : ''));
+    } else if (j.state === 'error') {
+      if (native && native.ytClearJob) native.ytClearJob(j.appId);
+      if (prev !== 'error') toast('YouTube upload failed: ' + j.msg);
+    }
+    save();
+    if (ui.videoId === v.id) {
+      var el = $('ytProgress');
+      if (el && j.state === 'uploading' && prev === 'uploading') {
+        el.querySelector('span').textContent = j.pct + '%';
+        el.querySelector('i').style.width = j.pct + '%';
+        return;
+      }
+    }
+    if (ui.videoId === v.id || ui.tab === 'youtube' || ui.tab === 'library' || ui.tab === 'checklist') render();
+  };
+  function syncYtJobs() {
+    if (!native || !native.ytJobs) return;
+    var jobs = {};
+    try { jobs = JSON.parse(native.ytJobs()); } catch (e) { return; }
+    Object.keys(jobs).forEach(function (k) { window.onYtUpload(JSON.stringify(jobs[k])); });
+    // A job the service no longer knows about (app was killed mid-upload) is reset.
+    data.videos.forEach(function (v) {
+      if (v.yt && (v.yt.state === 'queued' || v.yt.state === 'uploading' || v.yt.state === 'thumbnail') && !jobs[v.id]) {
+        v.yt = { state: 'error', pct: 0, msg: 'Upload was interrupted. Try again.' };
+      }
+    });
+    save();
+  }
+
+  // ---------- views ----------
+  function render() {
+    var nav = document.querySelectorAll('#nav button');
+    for (var i = 0; i < nav.length; i++) nav[i].classList.toggle('active', nav[i].getAttribute('data-tab') === ui.tab);
+    var sub = !!ui.videoId || ui.page === 'accounts';
+    $('backBtn').classList.toggle('hidden', !sub);
+    $('newBtn').classList.toggle('hidden', sub);
+    $('accountsBtn').classList.toggle('hidden', sub);
+
+    if (ui.page === 'accounts') return renderAccounts();
+    if (ui.videoId && findVideo(ui.videoId)) return renderDetail(findVideo(ui.videoId));
+    ui.videoId = null;
+    if (ui.tab === 'checklist') return renderChecklist();
+    if (isPlatform(ui.tab)) return renderPlatform(ui.tab);
+    return renderLibrary();
+  }
+
+  function videoCard(v, showBadge) {
+    var ytBusy = v.yt && (v.yt.state === 'queued' || v.yt.state === 'uploading' || v.yt.state === 'thumbnail');
+    return '<div class="card platform ' + v.platform + '"><div class="prow">' +
+      '<input type="checkbox" class="check" data-quick="' + v.id + '"' + (v.status === 'uploaded' ? ' checked' : '') +
+      ' aria-label="Uploaded">' +
+      '<div class="lib-row body tap" data-open="' + v.id + '">' + thumbHtml(v, 'lib-thumb') +
+      '<div class="body"><h3>' + esc(v.title) + '</h3>' +
+      '<div class="meta">' + esc(subline(v)) + (v.reminder && v.scheduledAt && v.status !== 'uploaded' ? ' · &#128276;' : '') + '</div>' +
+      '<div class="pills">' + (showBadge ? badge(v.platform) : '') + statusPill(v) +
+      (ytBusy ? '<span class="pill scheduled">YouTube ' + (v.yt.state === 'uploading' ? v.yt.pct + '%' : '…') + '</span>' : '') +
+      '</div></div></div></div></div>';
+  }
+
+  function renderLibrary() {
+    $('pageTitle').textContent = 'Faith Finance';
+    var all = data.videos.slice();
+    var html = '<div class="summary four">' + PLATFORMS.map(function (p) {
+      var list = videosOf(p.key);
+      var done = list.filter(function (v) { return v.status === 'uploaded'; }).length;
+      return '<button class="stat tap" data-tab-go="' + p.key + '"><span class="dot ' + p.key + '"></span><b>' + list.length +
+        '</b><span>' + p.name + '<br>' + done + ' uploaded</span></button>';
+    }).join('') + '</div>';
+    var opts = [{ k: 'all', n: 'All' }].concat(PLATFORMS.map(function (p) { return { k: p.key, n: p.name }; }));
+    html += chips('library', opts);
+    var f = ui.filters.library || 'all';
+    var list = f === 'all' ? all : all.filter(function (v) { return v.platform === f; });
+    list.sort(function (a, b) { return b.createdAt - a.createdAt; });
+    if (!list.length) {
+      html += '<div class="empty">' + (all.length ? 'No videos in this filter.' :
+        'No videos yet.<br>Open a platform below (YouTube, Instagram…) and tap <b>+ New Video</b>, or tap it here and choose the platform.') + '</div>';
+    }
+    list.forEach(function (v) { html += videoCard(v, true); });
+    $('view').innerHTML = html;
+  }
+
+  // Checklist: every video appears automatically, grouped by platform, one checkbox each.
+  function renderChecklist() {
+    $('pageTitle').textContent = 'Upload Checklist';
+    var total = data.videos.length;
+    var done = data.videos.filter(function (v) { return v.status === 'uploaded'; }).length;
+    var html = '<div class="summary">' +
+      '<div class="stat"><b>' + total + '</b><span>Videos</span></div>' +
+      '<div class="stat"><b>' + done + '</b><span>Uploaded</span></div>' +
+      '<div class="stat"><b>' + (total - done) + '</b><span>Left</span></div></div>';
+    html += chips('checklist', [{ k: 'all', n: 'All' }, { k: 'pending', n: 'Not uploaded' }, { k: 'done', n: 'Uploaded' }]);
+    var f = ui.filters.checklist || 'all';
+    if (!total) html += '<div class="empty">No videos yet.<br>Every video you add appears here automatically with its checkbox.</div>';
+    PLATFORMS.forEach(function (p) {
+      var list = sortVideos(videosOf(p.key));
+      if (f === 'pending') list = list.filter(function (v) { return v.status !== 'uploaded'; });
+      if (f === 'done') list = list.filter(function (v) { return v.status === 'uploaded'; });
+      if (!list.length) return;
+      var n = videosOf(p.key).filter(function (v) { return v.status === 'uploaded'; }).length;
+      html += '<div class="section-title cl-head"><span class="dot ' + p.key + '"></span>' + p.name +
+        '<small>' + n + '/' + videosOf(p.key).length + ' uploaded</small></div><div class="card cl-list">';
+      list.forEach(function (v) {
+        var on = v.status === 'uploaded';
+        html += '<div class="cl-item' + (on ? ' on' : '') + '">' +
+          '<label class="cl-box ' + p.key + (on ? ' on' : '') + '"><input type="checkbox" data-quick="' + v.id + '"' + (on ? ' checked' : '') + '>' +
+          '<span class="cl-tick">' + (on ? '&#10003;' : '') + '</span></label>' +
+          '<div class="lib-row body tap" data-open="' + v.id + '">' + thumbHtml(v, 'cl-thumb') +
+          '<div class="body"><b>' + esc(v.title) + '</b><div class="meta">' + esc(subline(v)) + '</div></div></div></div>';
+      });
+      html += '</div>';
+    });
+    $('view').innerHTML = html;
+  }
+
+  function renderPlatform(key) {
+    $('pageTitle').textContent = pname(key);
+    var list = videosOf(key);
+    var counts = { pending: 0, scheduled: 0, uploaded: 0 };
+    list.forEach(function (v) {
+      if (v.status === 'uploaded') counts.uploaded++;
+      else if (v.status === 'scheduled') counts.scheduled++;
+      else counts.pending++;
+    });
+    var html = '';
+    if (key === 'youtube') {
+      var st = ytStatus();
+      html += '<div class="card acct-strip tap" data-accounts="1"><span class="dot youtube"></span><div class="body">' +
+        (st.connected ? '<b>Connected:</b> ' + esc(st.channel || 'YouTube channel') + '<div class="meta">Videos here can be uploaded straight to your channel.</div>'
+          : '<b>Connect your YouTube channel</b><div class="meta">Upload video, thumbnail, title &amp; description from the app.</div>') +
+        '</div><span class="chev">&#8250;</span></div>';
+    } else {
+      html += '<div class="card acct-strip tap" data-accounts="1"><span class="dot ' + key + '"></span><div class="body"><b>' + pname(key) +
+        ' account</b><div class="meta">Auto upload is coming next. For now use “Share to ' + pname(key) + '”.</div></div><span class="chev">&#8250;</span></div>';
+    }
+    html += '<div class="summary">' +
+      '<div class="stat"><b>' + counts.pending + '</b><span>Pending</span></div>' +
+      '<div class="stat"><b>' + counts.scheduled + '</b><span>Scheduled</span></div>' +
+      '<div class="stat"><b>' + counts.uploaded + '</b><span>Uploaded</span></div></div>';
+    html += chips(key, [{ k: 'all', n: 'All' }, { k: 'todo', n: 'Not uploaded' }, { k: 'uploaded', n: 'Uploaded' }]);
+    var f = ui.filters[key] || 'all';
+    if (f === 'todo') list = list.filter(function (v) { return v.status !== 'uploaded'; });
+    if (f === 'uploaded') list = list.filter(function (v) { return v.status === 'uploaded'; });
+    sortVideos(list);
+    if (!list.length) {
+      html += '<div class="empty">' + (videosOf(key).length ? 'Nothing in this filter.' :
+        'No ' + pname(key) + ' videos yet.<br>Tap <b>+ New Video</b> to add one. It stays only in ' + pname(key) + '.') + '</div>';
+    }
+    list.forEach(function (v) { html += videoCard(v, false); });
+    $('view').innerHTML = html;
+  }
+
+  function mediaBox(v) {
+    var busy = ui.copying && ui.copying.id === v.id ? ui.copying : null;
+    var h = '';
+    if (busy && busy.kind === 'video') {
+      h += '<div class="media-empty" id="mediaProgress">Saving video into the app… <span>' + busy.pct + '%</span>' +
+        '<div class="bar" style="margin-top:8px"><i style="width:' + busy.pct + '%"></i></div></div>';
+    } else if (v.video && v.video.path) {
+      h += '<video class="player" controls preload="metadata" src="' + esc(mediaSrc(v.video.path)) + '"' +
+        (v.thumb && v.thumb.path ? ' poster="' + esc(mediaSrc(v.thumb.path)) + '"' : '') + '></video>' +
+        '<div class="meta">' + esc(v.video.name || 'Video') + (v.video.size ? ' · ' + fmtSize(v.video.size) : '') + '</div>' +
+        '<div class="row"><button class="small" data-pick="video">Change video (gallery)</button>' +
+        '<button class="small ghost" data-remove="video">Remove</button></div>';
+    } else {
+      h += '<button class="media-empty add" data-pick="video">&#127909;<br><b>+ Add video from gallery</b><br>' +
+        '<span class="meta">A copy is saved inside the app.</span></button>';
+    }
+    h += '<div class="thumb-row">';
+    if (busy && busy.kind === 'thumb') h += '<div class="thumb none" id="mediaProgress"><span>' + busy.pct + '%</span></div>';
+    else if (v.thumb && v.thumb.path) h += '<img class="thumb" alt="Thumbnail" src="' + esc(mediaSrc(v.thumb.path)) + '">';
+    else h += '<div class="thumb none">No thumbnail</div>';
+    h += '<div><b>Thumbnail</b><div class="row" style="margin-top:6px">' +
+      '<button class="small" data-pick="thumb">' + (v.thumb ? 'Change' : '+ Add') + ' (gallery)</button>' +
+      (v.thumb ? '<button class="small ghost" data-remove="thumb">Remove</button>' : '') + '</div></div></div>';
+    return h;
+  }
+
+  function ytBox(v) {
+    var st = ytStatus();
+    var y = v.yt || {};
+    var h = '<div class="section-title">Upload to YouTube</div><div class="card platform youtube">';
+    if (!st.available) {
+      h += '<div class="meta">YouTube upload works in the Android app.</div>';
+    } else if (!st.connected) {
+      h += '<p class="hint">Connect your YouTube channel once, then upload this video with its thumbnail, title, description and hashtags.</p>' +
+        '<button class="primary" data-accounts="1">Connect YouTube account</button>';
+    } else {
+      h += '<div class="meta">Channel: <b>' + esc(st.channel || 'Connected') + '</b></div>' +
+        '<label>Visibility<select data-f="privacy">' + PRIVACY.map(function (p) {
+          return '<option value="' + p.k + '"' + (p.k === v.privacy ? ' selected' : '') + '>' + p.n + '</option>';
+        }).join('') + '</select></label>';
+      if (v.scheduledAt && new Date(v.scheduledAt).getTime() > Date.now()) {
+        h += '<div class="hint">Scheduled: YouTube will publish it on ' + esc(fmtDate(v.scheduledAt)) + ' (uploaded as private until then).</div>';
+      }
+      var busy = y.state === 'queued' || y.state === 'uploading' || y.state === 'thumbnail';
+      if (busy) {
+        var label = y.state === 'queued' ? 'Starting…' : (y.state === 'thumbnail' ? 'Setting thumbnail…' : 'Uploading…');
+        h += '<div class="yt-progress" id="ytProgress">' + label + ' <span>' + (y.pct || 0) + '%</span>' +
+          '<div class="bar"><i style="width:' + (y.pct || 0) + '%"></i></div>' +
+          '<div class="meta">You can leave this screen. Progress also shows in the notification.</div></div>';
+      } else {
+        if (y.state === 'done') {
+          h += '<div class="ok-box">&#10003; Uploaded to YouTube' + (y.msg ? '<br><small>' + esc(y.msg) + '</small>' : '') + '</div>';
+        } else if (y.state === 'error') {
+          h += '<div class="err-box">Upload failed: ' + esc(y.msg) + '</div>';
+        }
+        h += '<button class="primary yt-btn" data-ytupload="1">&#11014; ' + (y.state === 'done' ? 'Upload again' : 'Upload to YouTube') + '</button>' +
+          '<div class="meta" style="margin-top:6px">Sends: video, thumbnail, title, description + hashtags.</div>';
+      }
+    }
+    return h + '</div>';
+  }
+
+  function renderDetail(v) {
+    var k = v.platform, P = pname(k);
+    $('pageTitle').textContent = v.title || P;
+    var html = '<div class="card platform ' + k + '">' +
+      '<div class="platform-head">' + badge(k) + '<span style="flex:1"></span>' + statusPill(v) + '</div>' + mediaBox(v) +
+      '<label>' + P + ' title<input data-f="title" value="' + esc(v.title) + '" maxlength="' + (k === 'youtube' ? 100 : 300) + '"></label>' +
+      '<label>' + P + ' description<textarea data-f="description" rows="5">' + esc(v.description) + '</textarea></label>' +
+      '<label>' + P + ' hashtags<input data-f="hashtags" value="' + esc(v.hashtags) + '" placeholder="#tag1 #tag2"></label>' +
+      '<div class="meta" style="margin-top:8px">Created ' + esc(fmtDate(v.createdAt)) + '</div></div>';
+
+    if (k === 'youtube') html += ytBox(v);
+
+    html += '<div class="section-title">' + P + ' upload</div><div class="card checklist">' +
+      '<label class="check-row" style="border-top:0"><input type="checkbox" class="check" data-f="uploaded"' +
+      (v.status === 'uploaded' ? ' checked' : '') + '><span class="dot ' + k + '"></span><span class="cr-name">Uploaded on ' + P +
+      '<small>' + esc(subline(v)) + '</small></span>' + statusPill(v) + '</label>' +
+      '<div class="grid2">' +
+      '<label>Upload status<select data-f="status">' + STATUSES.map(function (s) {
+        return '<option value="' + s.key + '"' + (s.key === v.status ? ' selected' : '') + '>' + s.name + '</option>';
+      }).join('') + '</select></label>' +
+      '<label>Scheduled date &amp; time<input type="datetime-local" data-f="scheduledAt" value="' + esc(v.scheduledAt) + '"></label></div>' +
+      '<div class="inline"><label style="flex:1">Published video URL<input type="url" data-f="url" value="' + esc(v.url) + '" placeholder="https://"></label>' +
+      '<button class="small" data-openurl="1">Open</button></div>' +
+      '<div class="reminder"><label><input type="checkbox" data-f="reminder"' + (v.reminder ? ' checked' : '') + '> Reminder notification</label>' +
+      '<select data-f="reminderLead"' + (v.reminder ? '' : ' disabled') + '>' + LEADS.map(function (l) {
+        return '<option value="' + l.v + '"' + (l.v === Number(v.reminderLead) ? ' selected' : '') + '>' + l.name + '</option>';
+      }).join('') + '</select></div>' +
+      (v.reminder && !v.scheduledAt && v.status !== 'uploaded' ? '<div class="hint">Set a scheduled date &amp; time to get a reminder.</div>' : '') +
+      '<div class="row"><button class="small" data-share="1">Share to ' + P + ' app</button>' +
+      '<button class="small" data-copycap="1">Copy caption</button></div></div>';
+
+    html += '<div class="row end"><button class="danger" id="deleteBtn">Delete video</button></div>';
+    var y = window.scrollY;
+    $('view').innerHTML = html;
+    window.scrollTo(0, y);
+  }
+
+  function renderAccounts() {
+    $('pageTitle').textContent = 'Connected accounts';
+    var st = ytStatus();
+    var html = '<div class="card platform youtube"><div class="platform-head">' + badge('youtube') + '<span style="flex:1"></span>' +
+      (st.connected ? '<span class="pill uploaded">Connected</span>' : '<span class="pill">Not connected</span>') + '</div>';
+    if (!st.available) {
+      html += '<div class="meta">Account connection works in the Android app.</div>';
+    } else if (st.connected) {
+      html += '<p>Channel: <b>' + esc(st.channel || '') + '</b></p>' +
+        '<div class="row"><button class="danger" data-ytdisconnect="1">Disconnect</button></div>';
+    } else {
+      html += '<label>Client ID<input id="ytClientId" value="' + esc(st.clientId || '') + '" placeholder="xxxx.apps.googleusercontent.com" autocapitalize="off" autocomplete="off"></label>' +
+        '<label>Client secret<input id="ytClientSecret" value="' + esc(st.hasSecret ? '••••••••' : '') + '" placeholder="GOCSPX-..." autocapitalize="off" autocomplete="off"></label>' +
+        '<div class="row"><button class="primary" data-ytconnect="1">Save &amp; Connect YouTube</button></div>';
+    }
+    html += '<details class="guide"' + (st.connected ? '' : ' open') + '><summary>Setup guide (sirf ek baar)</summary><ol>' +
+      '<li>Browser mein <b>console.cloud.google.com</b> kholo. Usi Google account se login karo jisse YouTube channel bana hai.</li>' +
+      '<li>Upar <b>Select project → New project</b>. Naam: <i>Faith Finance</i> → Create.</li>' +
+      '<li><b>APIs &amp; Services → Library</b> mein “<b>YouTube Data API v3</b>” search karo → <b>Enable</b>.</li>' +
+      '<li><b>OAuth consent screen</b> (Google Auth Platform) kholo → Get started. App name <i>Faith Finance</i>, apna email. Audience: <b>External</b>.</li>' +
+      '<li><b>Audience → Test users → Add users</b> mein apna Gmail daalo. (Ya “<b>Publish app</b>” dabao, taaki login 7 din baad expire na ho.)</li>' +
+      '<li><b>Clients / Credentials → Create client → OAuth client ID</b>. Application type: <b>Desktop app</b> → Create.</li>' +
+      '<li>Jo <b>Client ID</b> aur <b>Client secret</b> mile, upar paste karo → <b>Save &amp; Connect</b>.</li>' +
+      '<li>Google “app verified nahi hai” bole to <b>Advanced → Go to Faith Finance</b> → Continue/Allow. Login ke baad “<b>Open Faith Finance</b>” dabao.</li>' +
+      '</ol><p class="warn"><b>Zaroori:</b> Google ke rule ke hisaab se naye (unverified) project se API ke through upload hui videos <b>Private par lock</b> rehti hain, jab tak project ka “YouTube API Services audit” pass na ho. Audit ke liye Google ka form bharna hota hai (free). Tab tak videos aapke channel par private aayengi.</p></details></div>';
+
+    ['instagram', 'facebook', 'tiktok'].forEach(function (k) {
+      html += '<div class="card platform ' + k + '"><div class="platform-head">' + badge(k) + '<span style="flex:1"></span><span class="pill">Coming next</span></div>' +
+        '<div class="meta">Auto upload for ' + pname(k) + ' is next. For now open a video and tap “Share to ' + pname(k) + ' app”: the video opens in ' + pname(k) + ' and the caption is copied.</div></div>';
+    });
+    $('view').innerHTML = html;
+  }
+
+  // ---------- navigation ----------
+  function openVideo(id) { ui.page = null; ui.videoId = id; window.scrollTo(0, 0); render(); }
+  function closeVideo() { ui.videoId = null; ui.page = null; render(); window.scrollTo(0, 0); }
+  function openAccounts() { ui.page = 'accounts'; ui.videoId = null; window.scrollTo(0, 0); render(); }
+
+  window.handleBack = function () {
+    if (!$('modal').classList.contains('hidden')) { closeModal(); return true; }
+    if (ui.videoId || ui.page) { closeVideo(); return true; }
+    if (ui.tab !== 'library') { ui.tab = 'library'; render(); return true; }
+    return false;
+  };
+  window.openReminder = function (rid) {
+    var id = String(rid);
+    if (!findVideo(id)) {
+      var p = id.split('__'); // old reminder format
+      id = p[0] + '_' + p[1];
+    }
+    var v = findVideo(id);
+    if (v) { ui.tab = v.platform; openVideo(v.id); }
+  };
+
+  // ---------- events ----------
+  $('nav').addEventListener('click', function (e) {
+    var b = e.target.closest('button[data-tab]');
+    if (!b) return;
+    ui.tab = b.getAttribute('data-tab');
+    ui.videoId = null;
+    ui.page = null;
+    render();
+    window.scrollTo(0, 0);
+  });
+  $('backBtn').addEventListener('click', closeVideo);
+  $('accountsBtn').addEventListener('click', openAccounts);
+
+  // New video form
+  function setDraftPlatform(key) {
+    ui.draft.platform = key;
+    var bs = document.querySelectorAll('#platformPick button');
+    for (var i = 0; i < bs.length; i++) bs[i].classList.toggle('active', bs[i].getAttribute('data-plat') === key);
+    $('newHeading').textContent = key ? 'New ' + pname(key) + ' video' : 'New video';
+    $('newTitleLabel').firstChild.textContent = (key ? pname(key) + ' title' : 'Title');
+  }
+  function openModal() {
+    $('newTitle').value = '';
+    $('newDesc').value = '';
+    $('newTags').value = '';
+    ui.draft = { id: uid(), video: null, thumb: null, platform: null };
+    ui.copying = null;
+    $('platformPick').innerHTML = PLATFORMS.map(function (p) {
+      return '<button type="button" class="pchoice ' + p.key + '" data-plat="' + p.key + '"><span class="dot ' + p.key + '"></span>' + p.name + '</button>';
+    }).join('');
+    setDraftPlatform(isPlatform(ui.tab) ? ui.tab : null);
+    renderDraftMedia();
+    $('modal').classList.remove('hidden');
+  }
+  function closeModal(keepMedia) {
+    if (ui.draft && keepMedia !== true) {
+      deleteMedia(ui.draft.video, ui.draft.id);
+      deleteMedia(ui.draft.thumb, ui.draft.id);
+    }
+    ui.draft = null;
+    ui.copying = null;
+    $('modal').classList.add('hidden');
+  }
   function renderDraftMedia() {
     var d = ui.draft;
     if (!d) return;
@@ -264,422 +683,99 @@
     }
     $('draftMedia').innerHTML = row('video', '&#127909;', 'Video from gallery') + row('thumb', '&#128444;', 'Thumbnail from gallery');
   }
-
-  function statusPill(pe) {
-    if (isOverdue(pe)) return '<span class="pill overdue">Overdue</span>';
-    var name = STATUSES.filter(function (s) { return s.key === pe.status; })[0];
-    return '<span class="pill ' + pe.status + '">' + esc(name ? name.name : pe.status) + '</span>';
-  }
-
-  function progressBar(v) {
-    var n = doneCount(v);
-    return '<div class="progress"><div class="bar"><i style="width:' + (n / PLATFORMS.length * 100) +
-      '%"></i></div><b>' + n + '/' + PLATFORMS.length + ' platforms completed</b></div>';
-  }
-
-  function chips(tabKey, options) {
-    var cur = ui.filters[tabKey] || 'all';
-    return '<div class="chips">' + options.map(function (o) {
-      return '<button class="chip' + (o.k === cur ? ' active' : '') + '" data-filter="' + o.k + '">' + esc(o.n) + '</button>';
-    }).join('') + '</div>';
-  }
-
-  // ---------- views ----------
-  function render() {
-    var nav = document.querySelectorAll('#nav button');
-    for (var i = 0; i < nav.length; i++) nav[i].classList.toggle('active', nav[i].getAttribute('data-tab') === ui.tab);
-
-    $('backBtn').classList.toggle('hidden', !ui.videoId);
-    $('newBtn').classList.toggle('hidden', !!ui.videoId);
-
-    if (ui.videoId && findVideo(ui.videoId)) return renderDetail(findVideo(ui.videoId));
-    ui.videoId = null;
-    if (ui.tab === 'library') return renderLibrary();
-    if (ui.tab === 'checklist') return renderChecklist();
-    return renderPlatform(ui.tab);
-  }
-
-  function thumbHtml(v, cls) {
-    return v.thumb && v.thumb.path
-      ? '<img class="' + cls + '" alt="" src="' + esc(mediaSrc(v.thumb.path)) + '">'
-      : '<div class="' + cls + ' none">' + (v.video ? '&#127909;' : 'No video') + '</div>';
-  }
-
-  // Checklist section: every video added to the library shows up here automatically,
-  // with its own checkbox for each platform.
-  function renderChecklist() {
-    $('pageTitle').textContent = 'Upload Checklist';
-    var vids = data.videos.slice().sort(function (a, b) { return b.createdAt - a.createdAt; });
-    var total = vids.length;
-    var ticks = 0;
-    vids.forEach(function (v) { ticks += doneCount(v); });
-    var f = ui.filters.checklist || 'all';
-    if (f === 'pending') vids = vids.filter(function (v) { return doneCount(v) < PLATFORMS.length; });
-    if (f === 'done') vids = vids.filter(function (v) { return doneCount(v) === PLATFORMS.length; });
-
-    var html = '<div class="summary">' +
-      '<div class="stat"><b>' + total + '</b><span>Videos</span></div>' +
-      '<div class="stat"><b>' + ticks + '/' + total * PLATFORMS.length + '</b><span>Uploads done</span></div>' +
-      '<div class="stat"><b>' + (total * PLATFORMS.length - ticks) + '</b><span>Uploads left</span></div></div>';
-    html += chips('checklist', [{ k: 'all', n: 'All' }, { k: 'pending', n: 'Pending' }, { k: 'done', n: 'All 4 done' }]);
-
-    if (!vids.length) {
-      html += '<div class="empty">' + (total ? 'Nothing in this filter.' :
-        'No videos yet.<br>Every video you add with <b>+ New Video</b> appears here automatically with 4 checkboxes.') + '</div>';
-    }
-    vids.forEach(function (v) {
-      var n = doneCount(v);
-      html += '<div class="card cl-card"><div class="lib-row tap" data-open="' + v.id + '">' + thumbHtml(v, 'cl-thumb') +
-        '<div class="body"><h3>' + esc(v.title) + '</h3>' +
-        '<div class="meta">' + n + '/' + PLATFORMS.length + ' platforms completed</div>' +
-        '<div class="bar" style="margin-top:6px"><i style="width:' + (n / PLATFORMS.length * 100) + '%"></i></div>' +
-        '</div></div><div class="cl-grid">' +
-        PLATFORMS.map(function (p) {
-          var on = v.platforms[p.key].status === 'uploaded';
-          return '<label class="cl-box ' + p.key + (on ? ' on' : '') + '">' +
-            '<input type="checkbox" data-quick="' + v.id + '" data-p="' + p.key + '"' + (on ? ' checked' : '') + '>' +
-            '<span class="cl-tick">' + (on ? '&#10003;' : '') + '</span>' + p.name + '</label>';
-        }).join('') + '</div></div>';
-    });
-    $('view').innerHTML = html;
-  }
-
-  function renderLibrary() {
-    $('pageTitle').textContent = 'Faith Finance';
-    var vids = data.videos.slice().sort(function (a, b) { return b.createdAt - a.createdAt; });
-    var total = vids.length;
-    var complete = vids.filter(function (v) { return doneCount(v) === PLATFORMS.length; }).length;
-    var f = ui.filters.library || 'all';
-    if (f === 'pending') vids = vids.filter(function (v) { return doneCount(v) < PLATFORMS.length; });
-    if (f === 'done') vids = vids.filter(function (v) { return doneCount(v) === PLATFORMS.length; });
-
-    var html = '<div class="summary">' +
-      '<div class="stat"><b>' + total + '</b><span>Videos</span></div>' +
-      '<div class="stat"><b>' + (total - complete) + '</b><span>In progress</span></div>' +
-      '<div class="stat"><b>' + complete + '</b><span>All 4 done</span></div></div>';
-    html += chips('library', [{ k: 'all', n: 'All' }, { k: 'pending', n: 'In progress' }, { k: 'done', n: 'Completed' }]);
-
-    if (!vids.length) {
-      html += '<div class="empty">' + (total ? 'No videos in this filter.' :
-        'No videos yet.<br>Tap <b>+ New Video</b>. Each video is created once and shows up on all 4 platforms.') + '</div>';
-    }
-    vids.forEach(function (v) {
-      var thumb = thumbHtml(v, 'lib-thumb');
-      html += '<div class="card tap" data-open="' + v.id + '"><div class="lib-row">' + thumb +
-        '<div class="body"><h3>' + esc(v.title) + '</h3>' +
-        '<div class="meta">Created ' + esc(fmtDate(v.createdAt)) +
-        (v.video ? ' · ' + fmtSize(v.video.size) : '') + '</div></div></div>' + progressBar(v) + '<div class="pills">' +
-        PLATFORMS.map(function (p) {
-          var pe = v.platforms[p.key];
-          var cls = isOverdue(pe) ? 'overdue' : pe.status;
-          var mark = pe.status === 'uploaded' ? '&#10003;' : (isOverdue(pe) ? '!' : '&#8226;');
-          return '<span class="pill ' + cls + '"><span class="dot ' + p.key + '"></span>' + p.name + ' ' + mark + '</span>';
-        }).join('') + '</div></div>';
-    });
-    $('view').innerHTML = html;
-  }
-
-  function renderPlatform(key) {
-    $('pageTitle').textContent = platformName(key);
-    var vids = data.videos.slice();
-    var counts = { pending: 0, scheduled: 0, uploaded: 0 };
-    vids.forEach(function (v) {
-      var s = v.platforms[key].status;
-      if (s === 'uploaded') counts.uploaded++;
-      else if (s === 'scheduled') counts.scheduled++;
-      else counts.pending++;
-    });
-    var f = ui.filters[key] || 'all';
-    if (f === 'todo') vids = vids.filter(function (v) { return v.platforms[key].status !== 'uploaded'; });
-    if (f === 'uploaded') vids = vids.filter(function (v) { return v.platforms[key].status === 'uploaded'; });
-    vids.sort(function (a, b) {
-      var pa = a.platforms[key], pb = b.platforms[key];
-      var ua = pa.status === 'uploaded' ? 1 : 0, ub = pb.status === 'uploaded' ? 1 : 0;
-      if (ua !== ub) return ua - ub;
-      var ta = pa.scheduledAt ? new Date(pa.scheduledAt).getTime() : Infinity;
-      var tb = pb.scheduledAt ? new Date(pb.scheduledAt).getTime() : Infinity;
-      if (ta !== tb) return ta - tb;
-      return b.createdAt - a.createdAt;
-    });
-
-    var html = '<div class="summary">' +
-      '<div class="stat"><b>' + counts.pending + '</b><span>Pending</span></div>' +
-      '<div class="stat"><b>' + counts.scheduled + '</b><span>Scheduled</span></div>' +
-      '<div class="stat"><b>' + counts.uploaded + '</b><span>Uploaded</span></div></div>';
-    html += chips(key, [{ k: 'all', n: 'All' }, { k: 'todo', n: 'Not uploaded' }, { k: 'uploaded', n: 'Uploaded' }]);
-
-    if (!vids.length) {
-      html += '<div class="empty">' + (data.videos.length ? 'Nothing in this filter.' :
-        'No videos yet. Videos you create in the library show up here automatically.') + '</div>';
-    }
-    vids.forEach(function (v) {
-      var pe = v.platforms[key];
-      var sub = pe.status === 'uploaded'
-        ? 'Uploaded ' + fmtDate(pe.uploadedAt)
-        : (pe.scheduledAt ? 'Scheduled ' + fmtDate(pe.scheduledAt) : 'Not scheduled');
-      html += '<div class="card platform ' + key + '"><div class="prow">' +
-        '<input type="checkbox" class="check" data-quick="' + v.id + '" data-p="' + key + '"' +
-        (pe.status === 'uploaded' ? ' checked' : '') + ' aria-label="Uploaded on ' + platformName(key) + '">' +
-        '<div class="body tap" data-open="' + v.id + '" data-focus="' + key + '">' +
-        '<h3>' + esc(pe.title || v.title) + '</h3>' +
-        '<div class="meta">' + esc(sub) + (pe.reminder && pe.scheduledAt && pe.status !== 'uploaded' ? ' · &#128276;' : '') + '</div>' +
-        '<div class="pills">' + statusPill(pe) + '<span class="pill">' + doneCount(v) + '/' + PLATFORMS.length + ' platforms</span></div>' +
-        '</div></div></div>';
-    });
-    $('view').innerHTML = html;
-  }
-
-  function mediaBox(v) {
-    var busy = ui.copying && ui.copying.id === v.id ? ui.copying : null;
-    var h = '';
-    // Video file
-    if (busy && busy.kind === 'video') {
-      h += '<div class="media-empty" id="mediaProgress">Saving video into the app… <span>' + busy.pct + '%</span>' +
-        '<div class="bar" style="margin-top:8px"><i style="width:' + busy.pct + '%"></i></div></div>';
-    } else if (v.video && v.video.path) {
-      h += '<video class="player" controls preload="metadata" src="' + esc(mediaSrc(v.video.path)) + '"' +
-        (v.thumb && v.thumb.path ? ' poster="' + esc(mediaSrc(v.thumb.path)) + '"' : '') + '></video>' +
-        '<div class="meta">' + esc(v.video.name || 'Video') + (v.video.size ? ' · ' + fmtSize(v.video.size) : '') + '</div>' +
-        '<div class="row"><button class="small" data-pick="video">Change video</button>' +
-        '<button class="small ghost" data-remove="video">Remove</button></div>';
-    } else {
-      h += '<button class="media-empty add" data-pick="video">&#127909;<br><b>+ Add video file</b><br>' +
-        '<span class="meta">Choose a video from your phone. A copy is saved inside the app.</span></button>';
-    }
-    // Thumbnail
-    h += '<div class="thumb-row">';
-    if (busy && busy.kind === 'thumb') {
-      h += '<div class="thumb none" id="mediaProgress"><span>' + busy.pct + '%</span><i style="display:none"></i></div>';
-    } else if (v.thumb && v.thumb.path) {
-      h += '<img class="thumb" alt="Thumbnail" src="' + esc(mediaSrc(v.thumb.path)) + '">';
-    } else {
-      h += '<div class="thumb none">No thumbnail</div>';
-    }
-    h += '<div><b>Thumbnail</b><div class="row" style="margin-top:6px">' +
-      '<button class="small" data-pick="thumb">' + (v.thumb ? 'Change' : '+ Add') + ' thumbnail</button>' +
-      (v.thumb ? '<button class="small ghost" data-remove="thumb">Remove</button>' : '') + '</div></div></div>';
-    return h;
-  }
-
-  function renderDetail(v) {
-    $('pageTitle').textContent = v.title;
-
-    // 1) My video: file, thumbnail, title, description, hashtags
-    var html = '<div class="card">' +
-      '<div class="section-title" style="margin-top:0">My video</div>' + mediaBox(v) +
-      '<label>Title<input data-main="title" value="' + esc(v.title) + '" maxlength="200"></label>' +
-      '<label>Description<textarea data-main="description" rows="4">' + esc(v.description) + '</textarea></label>' +
-      '<label>Hashtags<input data-main="hashtags" value="' + esc(v.hashtags) + '"></label>' +
-      '<div class="row"><button class="small" data-copyall="1">Copy to all 4 platforms</button></div>' +
-      '<div class="meta" style="margin-top:8px">Created ' + esc(fmtDate(v.createdAt)) + '</div></div>';
-
-    // 2) Upload checklist: kept separate
-    html += '<div class="section-title">Upload checklist</div><div class="card checklist">' + progressBar(v);
-    PLATFORMS.forEach(function (p) {
-      var pe = v.platforms[p.key];
-      html += '<label class="check-row"><input type="checkbox" class="check" data-p="' + p.key + '" data-f="uploaded"' +
-        (pe.status === 'uploaded' ? ' checked' : '') + '><span class="dot ' + p.key + '"></span>' +
-        '<span class="cr-name">' + p.name + '<small>' +
-        (pe.status === 'uploaded' ? 'Uploaded ' + esc(fmtDate(pe.uploadedAt))
-          : (pe.scheduledAt ? 'Scheduled ' + esc(fmtDate(pe.scheduledAt)) : 'Not uploaded yet')) +
-        '</small></span>' + statusPill(pe) + '</label>';
-    });
-    html += '</div>';
-
-    // 3) Platform details
-    html += '<div class="section-title">Platform details</div>';
-    PLATFORMS.forEach(function (p) {
-      var pe = v.platforms[p.key];
-      var k = p.key;
-      html += '<div class="card platform ' + k + '" id="pc-' + k + '">' +
-        '<div class="platform-head"><span class="dot ' + k + '"></span><h3>' + p.name + '</h3>' + statusPill(pe) + '</div>' +
-        '<div class="row" style="margin-top:0">' +
-        '<button class="small primary" data-share="' + k + '">Share video to ' + p.name + '</button>' +
-        '<button class="small" data-copycap="' + k + '">Copy caption</button></div>' +
-        '<div class="grid2">' +
-        '<label>Upload status<select data-p="' + k + '" data-f="status">' +
-        STATUSES.map(function (s) {
-          return '<option value="' + s.key + '"' + (s.key === pe.status ? ' selected' : '') + '>' + s.name + '</option>';
-        }).join('') + '</select></label>' +
-        '<label>Scheduled date &amp; time<input type="datetime-local" data-p="' + k + '" data-f="scheduledAt" value="' + esc(pe.scheduledAt) + '"></label>' +
-        '</div>' +
-        '<label>' + p.name + ' title<input data-p="' + k + '" data-f="title" value="' + esc(pe.title) + '" placeholder="' + esc(v.title) + '"></label>' +
-        '<label>' + p.name + ' description<textarea rows="3" data-p="' + k + '" data-f="description">' + esc(pe.description) + '</textarea></label>' +
-        '<label>' + p.name + ' hashtags<input data-p="' + k + '" data-f="hashtags" value="' + esc(pe.hashtags) + '"></label>' +
-        '<div class="inline"><label style="flex:1">Published video URL<input type="url" data-p="' + k + '" data-f="url" value="' + esc(pe.url) + '" placeholder="https://"></label>' +
-        '<button class="small" data-openurl="' + k + '">Open</button></div>' +
-        '<div class="reminder"><label><input type="checkbox" data-p="' + k + '" data-f="reminder"' + (pe.reminder ? ' checked' : '') + '> Reminder notification</label>' +
-        '<select data-p="' + k + '" data-f="reminderLead"' + (pe.reminder ? '' : ' disabled') + '>' +
-        LEADS.map(function (l) {
-          return '<option value="' + l.v + '"' + (l.v === Number(pe.reminderLead) ? ' selected' : '') + '>' + l.name + '</option>';
-        }).join('') + '</select></div>' +
-        (pe.reminder && !pe.scheduledAt && pe.status !== 'uploaded' ? '<div class="hint">Set a scheduled date &amp; time to get a reminder.</div>' : '') +
-        '</div>';
-    });
-
-    html += '<div class="row end"><button class="danger" id="deleteBtn">Delete video</button></div>';
-    var y = window.scrollY;
-    $('view').innerHTML = html;
-    if (ui.focus) {
-      var el = $('pc-' + ui.focus);
-      ui.focus = null;
-      if (el) el.scrollIntoView();
-    } else {
-      window.scrollTo(0, y);
-    }
-  }
-
-  // ---------- navigation ----------
-  function openVideo(id, focus) {
-    ui.videoId = id;
-    ui.focus = focus || null;
-    window.scrollTo(0, 0);
-    render();
-  }
-  function closeVideo() {
-    ui.videoId = null;
-    render();
-    window.scrollTo(0, 0);
-  }
-
-  window.handleBack = function () {
-    if (!$('modal').classList.contains('hidden')) { closeModal(); return true; }
-    if (ui.videoId) { closeVideo(); return true; }
-    if (ui.tab !== 'library') { ui.tab = 'library'; render(); return true; }
-    return false;
-  };
-
-  window.openReminder = function (rid) {
-    var parts = String(rid).split('__');
-    if (findVideo(parts[0])) {
-      if (parts[1]) ui.tab = parts[1];
-      openVideo(parts[0], parts[1]);
-    }
-  };
-
-  // ---------- events ----------
-  $('nav').addEventListener('click', function (e) {
-    var b = e.target.closest('button[data-tab]');
-    if (!b) return;
-    ui.tab = b.getAttribute('data-tab');
-    ui.videoId = null;
-    render();
-    window.scrollTo(0, 0);
-  });
-
-  $('backBtn').addEventListener('click', closeVideo);
-
-  function openModal() {
-    $('newTitle').value = '';
-    $('newDesc').value = '';
-    $('newTags').value = '';
-    ui.draft = { id: uid(), video: null, thumb: null };
-    ui.copying = null;
-    renderDraftMedia();
-    $('modal').classList.remove('hidden');
-  }
-  // keepMedia: true when the draft became a real video
-  function closeModal(keepMedia) {
-    if (ui.draft && keepMedia !== true) {
-      deleteMedia(ui.draft.video);
-      deleteMedia(ui.draft.thumb);
-    }
-    ui.draft = null;
-    ui.copying = null;
-    $('modal').classList.add('hidden');
-  }
   $('newBtn').addEventListener('click', openModal);
   $('cancelNew').addEventListener('click', function () { closeModal(); });
   $('modal').addEventListener('click', function (e) {
     if (e.target === $('modal')) { closeModal(); return; }
+    var pl = e.target.closest('[data-plat]');
+    if (pl && ui.draft) { setDraftPlatform(pl.getAttribute('data-plat')); return; }
     var dp = e.target.closest('[data-draftpick]');
     if (dp && ui.draft) {
       if (ui.copying) { toast('Please wait, a file is still being saved'); return; }
-      pickMedia(ui.draft, dp.getAttribute('data-draftpick'));
+      pickMedia(ui.draft.id, dp.getAttribute('data-draftpick'));
     }
   });
   $('createNew').addEventListener('click', function () {
     if (ui.copying) { toast('Please wait, the file is still being saved'); return; }
+    var d = ui.draft;
+    if (!d.platform) { toast('Choose the platform: YouTube, Instagram, Facebook or TikTok'); return; }
     var title = $('newTitle').value.trim();
     if (!title) { toast('Please enter a title'); $('newTitle').focus(); return; }
-    var d = ui.draft;
-    var v = createVideo(title, $('newDesc').value.trim(), $('newTags').value.trim(), d);
+    var v = createVideo(d.platform, title, $('newDesc').value.trim(), $('newTags').value.trim(), d);
     closeModal(true);
-    toast('Added to Checklist, YouTube, Instagram, Facebook & TikTok');
+    toast('Added to ' + pname(v.platform) + ' and the Checklist');
+    ui.tab = v.platform;
     openVideo(v.id);
   });
 
   var view = $('view');
-
   view.addEventListener('click', function (e) {
     var t = e.target;
     var filter = t.closest('[data-filter]');
-    if (filter) {
-      ui.filters[ui.tab] = filter.getAttribute('data-filter');
-      render();
+    if (filter) { ui.filters[ui.tab] = filter.getAttribute('data-filter'); render(); return; }
+    var go = t.closest('[data-tab-go]');
+    if (go) { ui.tab = go.getAttribute('data-tab-go'); render(); window.scrollTo(0, 0); return; }
+    if (t.matches('input[data-quick]')) return;
+    if (t.closest('[data-accounts]')) { openAccounts(); return; }
+    var open = t.closest('[data-open]');
+    if (open) { openVideo(open.getAttribute('data-open')); return; }
+
+    // Accounts page
+    if (t.closest('[data-ytconnect]')) {
+      var cid = $('ytClientId').value.trim(), sec = $('ytClientSecret').value.trim();
+      if (!/\.apps\.googleusercontent\.com$/.test(cid)) { toast('Paste the Client ID (ends with .apps.googleusercontent.com)'); return; }
+      if (!sec) { toast('Paste the Client secret'); return; }
+      native.ytSaveConfig(cid, sec === '••••••••' ? '' : sec);
+      native.ytConnect();
+      toast('Opening Google sign-in…');
       return;
     }
-    if (t.matches('input[data-quick]')) return; // handled in change
-    var open = t.closest('[data-open]');
-    if (open) { openVideo(open.getAttribute('data-open'), open.getAttribute('data-focus')); return; }
+    if (t.closest('[data-ytdisconnect]')) {
+      if (confirm('Disconnect your YouTube account from this app?')) { native.ytDisconnect(); render(); }
+      return;
+    }
 
     var cur = findVideo(ui.videoId);
+    if (!cur) return;
     var pk = t.closest('[data-pick]');
-    if (pk && cur) {
+    if (pk) {
       if (ui.copying) { toast('Please wait, a file is still being saved'); return; }
-      pickMedia(cur, pk.getAttribute('data-pick'));
+      pickMedia(cur.id, pk.getAttribute('data-pick'));
       return;
     }
     var rm = t.closest('[data-remove]');
-    if (rm && cur) {
+    if (rm) {
       var f = rm.getAttribute('data-remove');
       if (confirm(f === 'video' ? 'Remove this video file from the app?' : 'Remove the thumbnail?')) {
-        deleteMedia(cur[f]);
+        var m = cur[f];
         cur[f] = null;
+        deleteMedia(m, cur.id);
         save();
         render();
       }
       return;
     }
-    var sh = t.closest('[data-share]');
-    if (sh && cur) {
-      var sk = sh.getAttribute('data-share');
+    if (t.closest('[data-ytupload]')) { startYtUpload(cur); return; }
+    if (t.closest('[data-share]')) {
       if (!cur.video || !cur.video.path) { toast('Add the video file first'); return; }
-      if (native) native.shareVideo(cur.video.path, sk, caption(cur, sk));
+      if (native) native.shareVideo(cur.video.path, cur.platform, caption(cur));
       else toast('Sharing works in the Android app');
       return;
     }
-    var cc = t.closest('[data-copycap]');
-    if (cc && cur) { copyText(caption(cur, cc.getAttribute('data-copycap'))); return; }
-    if (t.closest('[data-copyall]') && cur) {
-      if (confirm('Replace the title, description and hashtags on all 4 platforms with these?')) {
-        PLATFORMS.forEach(function (p) {
-          var pe = cur.platforms[p.key];
-          pe.title = cur.title; pe.description = cur.description; pe.hashtags = cur.hashtags;
-        });
-        save();
-        render();
-        toast('Copied to YouTube, Instagram, Facebook & TikTok');
-      }
-      return;
-    }
-
-    var ou = t.closest('[data-openurl]');
-    if (ou) {
-      var v = findVideo(ui.videoId);
-      var url = v && v.platforms[ou.getAttribute('data-openurl')].url.trim();
+    if (t.closest('[data-copycap]')) { copyText(caption(cur)); return; }
+    if (t.closest('[data-openurl]')) {
+      var url = (cur.url || '').trim();
       if (!url) { toast('Add the published URL first'); return; }
       if (!/^https?:\/\//i.test(url)) url = 'https://' + url;
       if (native) native.openUrl(url); else window.open(url, '_blank');
       return;
     }
     if (t.id === 'deleteBtn') {
-      var dv = findVideo(ui.videoId);
-      if (dv && confirm('Delete "' + dv.title + '" from the library and all 4 platforms?')) {
-        cancelAllReminders(dv);
-        deleteMedia(dv.video);
-        deleteMedia(dv.thumb);
-        data.videos = data.videos.filter(function (x) { return x.id !== dv.id; });
+      if (confirm('Delete "' + cur.title + '" from ' + pname(cur.platform) + '?')) {
+        if (native) native.cancelReminder(cur.id);
+        data.videos = data.videos.filter(function (x) { return x.id !== cur.id; });
+        deleteMedia(cur.video, cur.id);
+        deleteMedia(cur.thumb, cur.id);
         save();
         closeVideo();
         toast('Video deleted');
@@ -687,75 +783,66 @@
     }
   });
 
-  // Text typing: save without re-rendering (keeps focus / cursor).
   view.addEventListener('input', function (e) {
-    var t = e.target;
-    var v = findVideo(ui.videoId);
+    var t = e.target, v = findVideo(ui.videoId);
     if (!v) return;
-    var main = t.getAttribute('data-main');
-    if (main) {
-      v[main] = t.value;
-      if (main === 'title') $('pageTitle').textContent = t.value;
-      saveSoon();
-      return;
-    }
-    var key = t.getAttribute('data-p'), f = t.getAttribute('data-f');
-    if (key && (f === 'title' || f === 'description' || f === 'hashtags' || f === 'url')) {
-      v.platforms[key][f] = t.value;
+    var f = t.getAttribute('data-f');
+    if (f === 'title' || f === 'description' || f === 'hashtags' || f === 'url') {
+      v[f] = t.value;
+      if (f === 'title') $('pageTitle').textContent = t.value || pname(v.platform);
       saveSoon();
     }
   });
 
   view.addEventListener('change', function (e) {
     var t = e.target;
-
-    // Quick checkbox in a platform list
     var qid = t.getAttribute('data-quick');
     if (qid) {
       var qv = findVideo(qid);
-      var qk = t.getAttribute('data-p');
-      setUploaded(qv, qk, t.checked);
-      toast((t.checked ? 'Uploaded on ' : 'Marked pending on ') + platformName(qk) + ' · ' + doneCount(qv) + '/4 done');
+      setUploaded(qv, t.checked);
+      toast((t.checked ? 'Uploaded on ' : 'Marked not uploaded on ') + pname(qv.platform));
       render();
       return;
     }
-
     var v = findVideo(ui.videoId);
     if (!v) return;
-    if (t.getAttribute('data-main')) { save(); render(); return; }
-    var key = t.getAttribute('data-p'), f = t.getAttribute('data-f');
-    if (!key || !f) return;
-    var pe = v.platforms[key];
-
+    var f = t.getAttribute('data-f');
+    if (!f) return;
     if (f === 'uploaded') {
-      setUploaded(v, key, t.checked);
-      toast((t.checked ? 'Uploaded on ' : 'Marked pending on ') + platformName(key) + ' · ' + doneCount(v) + '/4 done');
+      setUploaded(v, t.checked);
+      toast((t.checked ? 'Uploaded on ' : 'Marked not uploaded on ') + pname(v.platform));
     } else if (f === 'status') {
-      if (t.value === 'uploaded') setUploaded(v, key, true);
-      else { pe.status = t.value; pe.uploadedAt = null; }
+      if (t.value === 'uploaded') setUploaded(v, true);
+      else { v.status = t.value; v.uploadedAt = null; }
     } else if (f === 'scheduledAt') {
-      pe.scheduledAt = t.value;
-      if (t.value && pe.status === 'pending') pe.status = 'scheduled';
-      if (!t.value && pe.status === 'scheduled') pe.status = 'pending';
+      v.scheduledAt = t.value;
+      if (t.value && v.status === 'pending') v.status = 'scheduled';
+      if (!t.value && v.status === 'scheduled') v.status = 'pending';
     } else if (f === 'reminder') {
-      pe.reminder = t.checked;
+      v.reminder = t.checked;
     } else if (f === 'reminderLead') {
-      pe.reminderLead = Number(t.value);
+      v.reminderLead = Number(t.value);
     } else {
-      pe[f] = t.value;
+      v[f] = t.value;
     }
     save();
-    syncReminder(v, key);
+    syncReminder(v);
     render();
   });
 
-  // Re-render periodically so "Overdue" badges stay current.
   setInterval(function () {
     var a = document.activeElement;
-    if (ui.videoId) return; // don't interrupt typing or a playing video
+    if (ui.videoId || ui.page) return;
     if (!a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName)) render();
   }, 60000);
 
+  window.onAppResume = function () {
+    var a = document.activeElement;
+    syncYtJobs();
+    if (!a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName)) render();
+  };
+
+  syncYtJobs();
   render();
-  syncAllReminders();
+  data.videos.forEach(syncReminder);
 })();

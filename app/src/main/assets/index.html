@@ -9,7 +9,9 @@
 <body>
   <header class="topbar">
     <button id="backBtn" class="icon-btn hidden" aria-label="Back">&#8592;</button>
+    <img class="brand" src="logo.png" alt="Faith Finance logo">
     <h1 id="pageTitle">Faith Finance</h1>
+    <button id="accountsBtn" class="icon-btn acct" aria-label="Connected accounts" title="Connected accounts">&#128279;</button>
     <button id="newBtn" class="primary small">+ New Video</button>
   </header>
 
@@ -26,12 +28,14 @@
 
   <div id="modal" class="modal hidden">
     <div class="sheet">
-      <h2>New video</h2>
-      <p class="hint">Created once in the library. It is added to the Checklist and to YouTube, Instagram, Facebook and TikTok automatically.</p>
+      <h2 id="newHeading">New video</h2>
+      <p class="hint">This video stays only in the platform you choose. It also appears in the Checklist automatically.</p>
+      <div class="plat-label">Platform</div>
+      <div id="platformPick" class="platform-pick"></div>
       <div id="draftMedia"></div>
-      <label>Video title<input id="newTitle" maxlength="200" placeholder="e.g. Morning routine vlog"></label>
-      <label>Notes / description<textarea id="newDesc" rows="3" placeholder="Main description (copied to each platform)"></textarea></label>
-      <label>Hashtags<input id="newTags" placeholder="#vlog #daily"></label>
+      <label id="newTitleLabel">Title<input id="newTitle" maxlength="300" placeholder="Video title"></label>
+      <label>Description<textarea id="newDesc" rows="3" placeholder="Description"></textarea></label>
+      <label>Hashtags<input id="newTags" placeholder="#finance #money"></label>
       <div class="row end">
         <button id="cancelNew" class="ghost">Cancel</button>
         <button id="createNew" class="primary">Create</button>
