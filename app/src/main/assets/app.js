@@ -81,6 +81,8 @@
       title: title,
       description: description,
       hashtags: hashtags,
+      video: null,
+      thumb: null,
       createdAt: Date.now()
     };
     ensurePlatforms(v);
@@ -168,6 +170,69 @@
     toastTimer = setTimeout(function () { t.classList.add('hidden'); }, 2200);
   }
   function $(id) { return document.getElementById(id); }
+  function mediaSrc(path) {
+    return /^(blob:|https?:|file:|data:)/.test(path) ? path : 'file://' + path;
+  }
+  function fmtSize(b) {
+    if (!b) return '';
+    if (b > 1073741824) return (b / 1073741824).toFixed(2) + ' GB';
+    if (b > 1048576) return (b / 1048576).toFixed(1) + ' MB';
+    return Math.max(1, Math.round(b / 1024)) + ' KB';
+  }
+  function caption(v, key) {
+    var pe = v.platforms[key];
+    return [pe.title || v.title, pe.description, pe.hashtags]
+      .filter(function (x) { return x && String(x).trim(); }).join('\n\n');
+  }
+  function copyText(text) {
+    if (native) { native.copyText(text); return; }
+    if (navigator.clipboard) navigator.clipboard.writeText(text).then(function () { toast('Copied'); });
+  }
+
+  // ---------- media (video file + thumbnail) ----------
+  function pickMedia(v, kind) {
+    if (native) { native.pickMedia(v.id, kind); return; }
+    // Browser fallback (for testing only; not saved after reload).
+    var inp = document.createElement('input');
+    inp.type = 'file';
+    inp.accept = kind === 'video' ? 'video/*' : 'image/*';
+    inp.onchange = function () {
+      var f = inp.files && inp.files[0];
+      if (f) window.onMediaPicked(v.id, kind, URL.createObjectURL(f), f.name, f.size);
+    };
+    inp.click();
+  }
+  function deleteMedia(m) {
+    if (m && m.path && native) native.deleteMedia(m.path);
+  }
+  window.onMediaProgress = function (id, kind, pct) {
+    var first = !ui.copying;
+    ui.copying = { id: id, kind: kind, pct: pct };
+    if (ui.videoId !== id) return;
+    var el = $('mediaProgress');
+    if (first || !el) { render(); return; }
+    el.querySelector('span').textContent = pct + '%';
+    el.querySelector('i').style.width = pct + '%';
+  };
+  window.onMediaPicked = function (id, kind, path, name, size) {
+    ui.copying = null;
+    var v = findVideo(id);
+    if (!v) { if (native) native.deleteMedia(path); return; }
+    var field = kind === 'video' ? 'video' : 'thumb';
+    deleteMedia(v[field]);
+    v[field] = { path: path, name: name, size: size };
+    save();
+    toast(kind === 'video' ? 'Video saved in the app' : 'Thumbnail saved');
+    if (ui.videoId === id) render();
+  };
+  window.onMediaError = function (id, kind, msg) {
+    ui.copying = null;
+    toast('Could not save file: ' + msg);
+    if (ui.videoId === id) render();
+  };
+  window.onMediaCancel = function () {
+    if (ui.copying) { ui.copying = null; render(); }
+  };
 
   function statusPill(pe) {
     if (isOverdue(pe)) return '<span class="pill overdue">Overdue</span>';
@@ -222,8 +287,13 @@
         'No videos yet.<br>Tap <b>+ New Video</b>. Each video is created once and shows up on all 4 platforms.') + '</div>';
     }
     vids.forEach(function (v) {
-      html += '<div class="card tap" data-open="' + v.id + '"><h3>' + esc(v.title) + '</h3>' +
-        '<div class="meta">Created ' + esc(fmtDate(v.createdAt)) + '</div>' + progressBar(v) + '<div class="pills">' +
+      var thumb = v.thumb && v.thumb.path
+        ? '<img class="lib-thumb" alt="" src="' + esc(mediaSrc(v.thumb.path)) + '">'
+        : '<div class="lib-thumb none">' + (v.video ? '&#127909;' : 'No video') + '</div>';
+      html += '<div class="card tap" data-open="' + v.id + '"><div class="lib-row">' + thumb +
+        '<div class="body"><h3>' + esc(v.title) + '</h3>' +
+        '<div class="meta">Created ' + esc(fmtDate(v.createdAt)) +
+        (v.video ? ' · ' + fmtSize(v.video.size) : '') + '</div></div></div>' + progressBar(v) + '<div class="pills">' +
         PLATFORMS.map(function (p) {
           var pe = v.platforms[p.key];
           var cls = isOverdue(pe) ? 'overdue' : pe.status;
@@ -284,25 +354,73 @@
     $('view').innerHTML = html;
   }
 
+  function mediaBox(v) {
+    var busy = ui.copying && ui.copying.id === v.id ? ui.copying : null;
+    var h = '';
+    // Video file
+    if (busy && busy.kind === 'video') {
+      h += '<div class="media-empty" id="mediaProgress">Saving video into the app… <span>' + busy.pct + '%</span>' +
+        '<div class="bar" style="margin-top:8px"><i style="width:' + busy.pct + '%"></i></div></div>';
+    } else if (v.video && v.video.path) {
+      h += '<video class="player" controls preload="metadata" src="' + esc(mediaSrc(v.video.path)) + '"' +
+        (v.thumb && v.thumb.path ? ' poster="' + esc(mediaSrc(v.thumb.path)) + '"' : '') + '></video>' +
+        '<div class="meta">' + esc(v.video.name || 'Video') + (v.video.size ? ' · ' + fmtSize(v.video.size) : '') + '</div>' +
+        '<div class="row"><button class="small" data-pick="video">Change video</button>' +
+        '<button class="small ghost" data-remove="video">Remove</button></div>';
+    } else {
+      h += '<button class="media-empty add" data-pick="video">&#127909;<br><b>+ Add video file</b><br>' +
+        '<span class="meta">Choose a video from your phone. A copy is saved inside the app.</span></button>';
+    }
+    // Thumbnail
+    h += '<div class="thumb-row">';
+    if (busy && busy.kind === 'thumb') {
+      h += '<div class="thumb none" id="mediaProgress"><span>' + busy.pct + '%</span><i style="display:none"></i></div>';
+    } else if (v.thumb && v.thumb.path) {
+      h += '<img class="thumb" alt="Thumbnail" src="' + esc(mediaSrc(v.thumb.path)) + '">';
+    } else {
+      h += '<div class="thumb none">No thumbnail</div>';
+    }
+    h += '<div><b>Thumbnail</b><div class="row" style="margin-top:6px">' +
+      '<button class="small" data-pick="thumb">' + (v.thumb ? 'Change' : '+ Add') + ' thumbnail</button>' +
+      (v.thumb ? '<button class="small ghost" data-remove="thumb">Remove</button>' : '') + '</div></div></div>';
+    return h;
+  }
+
   function renderDetail(v) {
     $('pageTitle').textContent = v.title;
-    var html = '<div class="card">' +
-      '<div class="section-title" style="margin-top:0">Main video (shared)</div>' +
-      '<label>Title<input data-main="title" value="' + esc(v.title) + '" maxlength="200"></label>' +
-      '<label>Description<textarea data-main="description" rows="3">' + esc(v.description) + '</textarea></label>' +
-      '<label>Hashtags<input data-main="hashtags" value="' + esc(v.hashtags) + '"></label>' +
-      '<div class="meta" style="margin-top:8px">Created ' + esc(fmtDate(v.createdAt)) + '</div>' +
-      progressBar(v) + '</div>';
 
-    html += '<div class="section-title">Platforms</div>';
+    // 1) My video: file, thumbnail, title, description, hashtags
+    var html = '<div class="card">' +
+      '<div class="section-title" style="margin-top:0">My video</div>' + mediaBox(v) +
+      '<label>Title<input data-main="title" value="' + esc(v.title) + '" maxlength="200"></label>' +
+      '<label>Description<textarea data-main="description" rows="4">' + esc(v.description) + '</textarea></label>' +
+      '<label>Hashtags<input data-main="hashtags" value="' + esc(v.hashtags) + '"></label>' +
+      '<div class="row"><button class="small" data-copyall="1">Copy to all 4 platforms</button></div>' +
+      '<div class="meta" style="margin-top:8px">Created ' + esc(fmtDate(v.createdAt)) + '</div></div>';
+
+    // 2) Upload checklist: kept separate
+    html += '<div class="section-title">Upload checklist</div><div class="card checklist">' + progressBar(v);
+    PLATFORMS.forEach(function (p) {
+      var pe = v.platforms[p.key];
+      html += '<label class="check-row"><input type="checkbox" class="check" data-p="' + p.key + '" data-f="uploaded"' +
+        (pe.status === 'uploaded' ? ' checked' : '') + '><span class="dot ' + p.key + '"></span>' +
+        '<span class="cr-name">' + p.name + '<small>' +
+        (pe.status === 'uploaded' ? 'Uploaded ' + esc(fmtDate(pe.uploadedAt))
+          : (pe.scheduledAt ? 'Scheduled ' + esc(fmtDate(pe.scheduledAt)) : 'Not uploaded yet')) +
+        '</small></span>' + statusPill(pe) + '</label>';
+    });
+    html += '</div>';
+
+    // 3) Platform details
+    html += '<div class="section-title">Platform details</div>';
     PLATFORMS.forEach(function (p) {
       var pe = v.platforms[p.key];
       var k = p.key;
       html += '<div class="card platform ' + k + '" id="pc-' + k + '">' +
         '<div class="platform-head"><span class="dot ' + k + '"></span><h3>' + p.name + '</h3>' + statusPill(pe) + '</div>' +
-        '<label class="uploaded-toggle"><input type="checkbox" class="check" data-p="' + k + '" data-f="uploaded"' +
-        (pe.status === 'uploaded' ? ' checked' : '') + '> Uploaded on ' + p.name + '</label>' +
-        (pe.uploadedAt ? '<div class="meta">Marked uploaded ' + esc(fmtDate(pe.uploadedAt)) + '</div>' : '') +
+        '<div class="row" style="margin-top:0">' +
+        '<button class="small primary" data-share="' + k + '">Share video to ' + p.name + '</button>' +
+        '<button class="small" data-copycap="' + k + '">Copy caption</button></div>' +
         '<div class="grid2">' +
         '<label>Upload status<select data-p="' + k + '" data-f="status">' +
         STATUSES.map(function (s) {
@@ -410,6 +528,47 @@
     var open = t.closest('[data-open]');
     if (open) { openVideo(open.getAttribute('data-open'), open.getAttribute('data-focus')); return; }
 
+    var cur = findVideo(ui.videoId);
+    var pk = t.closest('[data-pick]');
+    if (pk && cur) {
+      if (ui.copying) { toast('Please wait, a file is still being saved'); return; }
+      pickMedia(cur, pk.getAttribute('data-pick'));
+      return;
+    }
+    var rm = t.closest('[data-remove]');
+    if (rm && cur) {
+      var f = rm.getAttribute('data-remove');
+      if (confirm(f === 'video' ? 'Remove this video file from the app?' : 'Remove the thumbnail?')) {
+        deleteMedia(cur[f]);
+        cur[f] = null;
+        save();
+        render();
+      }
+      return;
+    }
+    var sh = t.closest('[data-share]');
+    if (sh && cur) {
+      var sk = sh.getAttribute('data-share');
+      if (!cur.video || !cur.video.path) { toast('Add the video file first'); return; }
+      if (native) native.shareVideo(cur.video.path, sk, caption(cur, sk));
+      else toast('Sharing works in the Android app');
+      return;
+    }
+    var cc = t.closest('[data-copycap]');
+    if (cc && cur) { copyText(caption(cur, cc.getAttribute('data-copycap'))); return; }
+    if (t.closest('[data-copyall]') && cur) {
+      if (confirm('Replace the title, description and hashtags on all 4 platforms with these?')) {
+        PLATFORMS.forEach(function (p) {
+          var pe = cur.platforms[p.key];
+          pe.title = cur.title; pe.description = cur.description; pe.hashtags = cur.hashtags;
+        });
+        save();
+        render();
+        toast('Copied to YouTube, Instagram, Facebook & TikTok');
+      }
+      return;
+    }
+
     var ou = t.closest('[data-openurl]');
     if (ou) {
       var v = findVideo(ui.videoId);
@@ -423,6 +582,8 @@
       var dv = findVideo(ui.videoId);
       if (dv && confirm('Delete "' + dv.title + '" from the library and all 4 platforms?')) {
         cancelAllReminders(dv);
+        deleteMedia(dv.video);
+        deleteMedia(dv.thumb);
         data.videos = data.videos.filter(function (x) { return x.id !== dv.id; });
         save();
         closeVideo();
@@ -496,6 +657,7 @@
   // Re-render periodically so "Overdue" badges stay current.
   setInterval(function () {
     var a = document.activeElement;
+    if (ui.videoId) return; // don't interrupt typing or a playing video
     if (!a || !/INPUT|TEXTAREA|SELECT/.test(a.tagName)) render();
   }, 60000);
 

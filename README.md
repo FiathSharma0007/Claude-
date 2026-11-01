@@ -2,6 +2,16 @@
 
 VideoHub is an Android app for tracking video uploads. Each video is stored once in a main content library and is tracked separately on four platforms: **YouTube, Instagram, Facebook and TikTok**.
 
+## Keep your videos in the app
+
+- **Add video file:** choose a video from your phone. A copy is saved inside the app and plays there.
+- **Thumbnail:** choose an image. It is shown with the video and in the library list.
+- **Title, description and hashtags** are kept with the video. "Copy to all 4 platforms" fills every platform with them.
+- **Upload checklist** is a separate section with one checkbox per platform.
+- **Share video to YouTube / Instagram / Facebook / TikTok** opens that app with the video and copies the caption to the clipboard.
+
+Because the app keeps its own copy of each video, it uses extra phone storage. Uninstalling the app deletes the saved videos and data.
+
 ## Shared video feature
 
 - Creating a video adds **one** record to the library. The YouTube, Instagram, Facebook and TikTok sections all show that same record, so there are no duplicate entries.
