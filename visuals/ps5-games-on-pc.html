@@ -1,0 +1,486 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>How PS5 Games Run on PC</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=IBM+Plex+Sans:wght@400;500;600&family=IBM+Plex+Mono:wght@400;500&display=swap" rel="stylesheet">
+<style>
+/* Layout idea: a technical field guide. Console side is blue, PC side is amber, everywhere. */
+:root {
+  --bg: #f3f5f9;
+  --surface: #ffffff;
+  --ink: #131925;
+  --muted: #586276;
+  --line: #d3d9e4;
+  --ps: #1d5bd0;
+  --ps-tint: #e6eefc;
+  --pc: #b35f00;
+  --pc-tint: #fbf0e2;
+  --font-display: "Barlow Condensed", "Arial Narrow", sans-serif;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, monospace;
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0d1118; --surface: #151b26; --ink: #e6eaf1; --muted: #97a1b4; --line: #2a3343;
+    --ps: #78a3ff; --ps-tint: #17233d; --pc: #f2a94a; --pc-tint: #2c2112;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0d1118; --surface: #151b26; --ink: #e6eaf1; --muted: #97a1b4; --line: #2a3343;
+  --ps: #78a3ff; --ps-tint: #17233d; --pc: #f2a94a; --pc-tint: #2c2112;
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+html { -webkit-text-size-adjust: 100%; }
+body {
+  margin: 0; background: var(--bg); color: var(--ink);
+  font: 16px/1.6 var(--font-body);
+}
+main { max-width: 1040px; margin: 0 auto; padding: 40px 20px 72px; display: grid; gap: 48px; }
+header { display: grid; gap: 12px; }
+h1, h2 { font-family: var(--font-display); font-weight: 700; letter-spacing: .01em; text-wrap: balance; margin: 0; line-height: 1.05; }
+h1 { font-size: clamp(2.4rem, 6vw, 3.6rem); }
+h2 { font-size: clamp(1.7rem, 3.6vw, 2.2rem); }
+h3 { margin: 0; font-size: 1.05rem; }
+p { margin: 0; max-width: 68ch; }
+.lede { font-size: 1.15rem; color: var(--muted); }
+.kicker { font-family: var(--font-mono); font-size: .8rem; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+section { display: grid; gap: 18px; }
+.ps { color: var(--ps); } .pc { color: var(--pc); }
+
+.routes { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; }
+.route { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 8px; align-content: start; }
+.route .tag { font-family: var(--font-mono); font-size: .75rem; padding: 2px 8px; border-radius: 99px; justify-self: start; }
+.tag.good { background: var(--pc-tint); color: var(--pc); }
+.tag.ok { background: var(--ps-tint); color: var(--ps); }
+.tag.no { background: var(--bg); color: var(--muted); border: 1px solid var(--line); }
+.route p { font-size: .95rem; color: var(--muted); }
+
+figure { margin: 0; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 20px; display: grid; gap: 12px; }
+.svgwrap { overflow-x: auto; }
+figure svg { display: block; width: 100%; min-width: 640px; height: auto; color: var(--ink); font-family: var(--font-body); }
+figcaption { font-size: .92rem; color: var(--muted); max-width: 80ch; }
+
+/* SVG roles */
+.frame-pc { fill: none; stroke: var(--pc); stroke-width: 2; }
+.frame-ps { fill: none; stroke: var(--ps); stroke-width: 2; }
+.box { fill: var(--bg); stroke: var(--line); stroke-width: 1.5; }
+.box-ps { fill: var(--ps-tint); stroke: var(--ps); stroke-width: 1.5; }
+.box-pc { fill: var(--pc-tint); stroke: var(--pc); stroke-width: 1.5; }
+.dash { fill: none; stroke: var(--muted); stroke-width: 1.5; stroke-dasharray: 6 5; }
+.t { fill: currentColor; font-size: 13px; }
+.tb { fill: currentColor; font-size: 14px; font-weight: 600; }
+.tm { fill: var(--muted); font-size: 12px; }
+.th { fill: currentColor; font-family: var(--font-display); font-size: 22px; font-weight: 700; }
+.tps { fill: var(--ps); } .tpc { fill: var(--pc); }
+.ln { stroke: var(--muted); stroke-width: 1.6; fill: none; }
+.ln-pc { stroke: var(--pc); stroke-width: 2; fill: none; }
+.ln-ps { stroke: var(--ps); stroke-width: 2; fill: none; }
+.arrowhead { fill: var(--muted); }
+.arrowhead-pc { fill: var(--pc); }
+.arrowhead-ps { fill: var(--ps); }
+
+.spec { width: 100%; border-collapse: collapse; font-size: .95rem; }
+.tablewrap { overflow-x: auto; background: var(--surface); border: 1px solid var(--line); border-radius: 12px; }
+.spec th, .spec td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--line); vertical-align: top; }
+.spec tr:last-child td { border-bottom: 0; }
+.spec thead th { font-family: var(--font-mono); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); font-weight: 500; }
+.spec td.num { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+
+.twocol { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+.panel { background: var(--surface); border: 1px solid var(--line); border-radius: 10px; padding: 18px; display: grid; gap: 8px; align-content: start; }
+.panel ul { margin: 0; padding-left: 1.1em; display: grid; gap: 6px; color: var(--muted); font-size: .95rem; }
+.panel li strong { color: var(--ink); font-weight: 600; }
+.note { border-left: 3px solid var(--pc); padding: 4px 0 4px 14px; color: var(--muted); font-size: .95rem; }
+footer { color: var(--muted); font-size: .85rem; border-top: 1px solid var(--line); padding-top: 16px; }
+
+@media (max-width: 760px) {
+  .routes, .twocol { grid-template-columns: 1fr; }
+  main { gap: 36px; padding-top: 28px; }
+}
+</style>
+</head>
+<body>
+<main>
+
+<header>
+  <div class="kicker">Visual explainer</div>
+  <h1>How PS5 games run on PC</h1>
+  <p class="lede">A PS5 game file will not open on a Windows PC. The game has to be rebuilt for PC, streamed from a real console, or run inside software that imitates a PS5. Only the first one actually runs the game on your hardware.</p>
+</header>
+
+<section aria-labelledby="routes">
+  <h2 id="routes">Three routes</h2>
+  <div class="routes">
+    <div class="route">
+      <span class="tag good">how most people play</span>
+      <h3>1. Official PC port</h3>
+      <p>The studio (often a specialist like Nixxes) rebuilds the game for Windows and sells it on Steam or Epic. Examples: Marvel's Spider-Man, God of War Ragnarök, Ghost of Tsushima, The Last of Us Part I.</p>
+    </div>
+    <div class="route">
+      <span class="tag ok">needs your own PS5</span>
+      <h3>2. Streaming</h3>
+      <p>PS Remote Play sends video from your PS5 to the PC and sends your controller input back. The PC never runs the game, so any PC that decodes video will do.</p>
+    </div>
+    <div class="route">
+      <span class="tag no">experimental</span>
+      <h3>3. Emulation</h3>
+      <p>Software pretends to be a PS5 so the console build can run unchanged. PS5 emulators are early research projects and are not a practical way to play.</p>
+    </div>
+  </div>
+
+  <figure>
+    <div class="svgwrap">
+    <svg viewBox="0 0 960 330" role="img" aria-label="Where the game code executes in each route: natively on the PC for a port, on a PS5 for streaming, and inside an emulator on the PC for emulation.">
+      <defs>
+        <marker id="a1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        <marker id="a1pc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-pc"/></marker>
+        <marker id="a1ps" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-ps"/></marker>
+      </defs>
+
+      <!-- Port -->
+      <text class="th" x="150" y="26" text-anchor="middle">Port</text>
+      <rect class="frame-pc" x="10" y="44" width="280" height="230" rx="10"/>
+      <text class="tm tpc" x="24" y="66">Your PC</text>
+      <rect class="box-pc" x="40" y="80" width="220" height="48" rx="6"/>
+      <text class="tb" x="150" y="109" text-anchor="middle">Game, Windows build</text>
+      <line class="ln" x1="150" y1="128" x2="150" y2="158" marker-end="url(#a1)"/>
+      <text class="tm" x="160" y="148">DirectX 12</text>
+      <rect class="box" x="40" y="160" width="220" height="40" rx="6"/>
+      <text class="t" x="150" y="185" text-anchor="middle">Your CPU and GPU</text>
+      <line class="ln" x1="150" y1="200" x2="150" y2="226" marker-end="url(#a1)"/>
+      <rect class="box" x="40" y="228" width="220" height="34" rx="6"/>
+      <text class="t" x="150" y="250" text-anchor="middle">Monitor</text>
+      <text class="t" x="150" y="302" text-anchor="middle">Runs natively.</text>
+      <text class="tm" x="150" y="320" text-anchor="middle">No PS5 involved.</text>
+
+      <!-- Stream -->
+      <text class="th" x="480" y="26" text-anchor="middle">Stream</text>
+      <rect class="frame-ps" x="340" y="44" width="280" height="90" rx="10"/>
+      <text class="tm tps" x="354" y="66">Your PS5</text>
+      <rect class="box-ps" x="360" y="76" width="240" height="44" rx="6"/>
+      <text class="tb" x="480" y="103" text-anchor="middle">Game runs, frames encoded</text>
+      <line class="ln-ps" x1="440" y1="136" x2="440" y2="182" marker-end="url(#a1ps)"/>
+      <text class="tm" x="430" y="164" text-anchor="end">video</text>
+      <line class="ln-pc" x1="520" y1="182" x2="520" y2="136" marker-end="url(#a1pc)"/>
+      <text class="tm" x="530" y="164">button presses</text>
+      <rect class="frame-pc" x="340" y="184" width="280" height="90" rx="10"/>
+      <text class="tm tpc" x="354" y="206">Your PC</text>
+      <rect class="box" x="360" y="216" width="240" height="44" rx="6"/>
+      <text class="t" x="480" y="243" text-anchor="middle">Remote Play app decodes video</text>
+      <text class="t" x="480" y="302" text-anchor="middle">Game runs on the console.</text>
+      <text class="tm" x="480" y="320" text-anchor="middle">The PC only shows a video feed.</text>
+
+      <!-- Emulate -->
+      <text class="th" x="810" y="26" text-anchor="middle">Emulate</text>
+      <rect class="frame-pc" x="670" y="44" width="280" height="230" rx="10"/>
+      <text class="tm tpc" x="684" y="66">Your PC</text>
+      <rect class="dash" x="690" y="76" width="240" height="124" rx="8"/>
+      <text class="tm" x="704" y="96">Emulator</text>
+      <rect class="box-ps" x="710" y="106" width="200" height="38" rx="6"/>
+      <text class="tb" x="810" y="130" text-anchor="middle">Game, PS5 build</text>
+      <text class="tm" x="810" y="168" text-anchor="middle">fakes the PS5 OS, translates</text>
+      <text class="tm" x="810" y="184" text-anchor="middle">GPU commands and shaders</text>
+      <line class="ln" x1="810" y1="200" x2="810" y2="226" marker-end="url(#a1)"/>
+      <text class="tm" x="820" y="218">Vulkan</text>
+      <rect class="box" x="690" y="228" width="240" height="34" rx="6"/>
+      <text class="t" x="810" y="250" text-anchor="middle">Your CPU and GPU</text>
+      <text class="t" x="810" y="302" text-anchor="middle">Imitates a PS5 in software.</text>
+      <text class="tm" x="810" y="320" text-anchor="middle">Not able to run games well yet.</text>
+    </svg>
+    </div>
+    <figcaption>The question that separates the three routes is where the game code executes. Blue marks PS5 hardware or PS5 code, amber marks your PC.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="why">
+  <h2 id="why">Why the PS5 version can't just run</h2>
+  <p>The PS5 is built from PC-like parts: an AMD x86-64 CPU and an AMD RDNA 2 class GPU. The game's compiled CPU code even uses the same instruction set as your PC. What differs is everything around the CPU: the operating system, the graphics API, how shaders ship, how memory is shared, and how data loads from the SSD.</p>
+
+  <div class="tablewrap">
+  <table class="spec">
+    <thead><tr><th>Part</th><th class="ps">PS5</th><th class="pc">Typical gaming PC</th></tr></thead>
+    <tbody>
+      <tr><td>CPU</td><td class="num">8-core AMD Zen 2, up to 3.5 GHz</td><td>Intel or AMD x86-64, any core count</td></tr>
+      <tr><td>GPU</td><td class="num">AMD RDNA 2 based, 36 CUs, up to 2.23 GHz, 10.3 TFLOPS</td><td>Thousands of NVIDIA, AMD and Intel models</td></tr>
+      <tr><td>Memory</td><td class="num">16 GB GDDR6, 448 GB/s, shared by CPU and GPU</td><td>System RAM plus separate VRAM on the card</td></tr>
+      <tr><td>Storage</td><td class="num">Custom SSD, 5.5 GB/s raw, hardware decompression</td><td>NVMe or SATA SSD, or a hard drive</td></tr>
+      <tr><td>OS</td><td>Sony's FreeBSD-derived system software</td><td>Windows (sometimes Linux via Proton)</td></tr>
+      <tr><td>Graphics API</td><td>Sony's low-level API, written for one GPU</td><td>DirectX 12 or Vulkan, written for every GPU</td></tr>
+    </tbody>
+  </table>
+  </div>
+
+  <figure>
+    <div class="svgwrap">
+    <svg viewBox="0 0 960 520" role="img" aria-label="Layer by layer, a PC port keeps the game code and the x86-64 CPU family but replaces the system libraries, graphics API, shader pipeline, and reworks loading and memory.">
+      <defs>
+        <marker id="a2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        <marker id="a2pc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-pc"/></marker>
+      </defs>
+      <text class="th tps" x="220" y="30" text-anchor="middle">On PS5</text>
+      <text class="th tpc" x="740" y="30" text-anchor="middle">In the PC port</text>
+
+      <!-- row 0 -->
+      <rect class="box" x="20" y="50" width="400" height="54" rx="6"/>
+      <text class="tb" x="36" y="73">Game code (C++)</text>
+      <text class="tm" x="36" y="91">gameplay, AI, physics, animation</text>
+      <line class="ln" x1="424" y1="77" x2="534" y2="77" marker-end="url(#a2)"/>
+      <text class="tm" x="479" y="70" text-anchor="middle">recompiled</text>
+      <rect class="box" x="540" y="50" width="400" height="54" rx="6"/>
+      <text class="tb" x="556" y="73">Same game code</text>
+      <text class="tm" x="556" y="91">built with Windows compilers</text>
+
+      <!-- row 1 -->
+      <rect class="box-ps" x="20" y="116" width="400" height="54" rx="6"/>
+      <text class="tb" x="36" y="139">PS5 system libraries</text>
+      <text class="tm" x="36" y="157">saves, trophies, PSN, audio, controller</text>
+      <line class="ln-pc" x1="424" y1="143" x2="534" y2="143" marker-end="url(#a2pc)"/>
+      <text class="tm tpc" x="479" y="136" text-anchor="middle">replaced</text>
+      <rect class="box-pc" x="540" y="116" width="400" height="54" rx="6"/>
+      <text class="tb" x="556" y="139">Windows and store libraries</text>
+      <text class="tm" x="556" y="157">Steam or Epic, Win32, PC audio, many controllers</text>
+
+      <!-- row 2 -->
+      <rect class="box-ps" x="20" y="182" width="400" height="54" rx="6"/>
+      <text class="tb" x="36" y="205">Sony's graphics API</text>
+      <text class="tm" x="36" y="223">talks almost directly to one known GPU</text>
+      <line class="ln-pc" x1="424" y1="209" x2="534" y2="209" marker-end="url(#a2pc)"/>
+      <text class="tm tpc" x="479" y="202" text-anchor="middle">rewritten</text>
+      <rect class="box-pc" x="540" y="182" width="400" height="54" rx="6"/>
+      <text class="tb" x="556" y="205">DirectX 12 (or Vulkan)</text>
+      <text class="tm" x="556" y="223">must work across thousands of GPUs and drivers</text>
+
+      <!-- row 3 -->
+      <rect class="box-ps" x="20" y="248" width="400" height="54" rx="6"/>
+      <text class="tb" x="36" y="271">Shaders compiled once, by the studio</text>
+      <text class="tm" x="36" y="289">PSSL, shipped as finished GPU machine code</text>
+      <line class="ln-pc" x1="424" y1="275" x2="534" y2="275" marker-end="url(#a2pc)"/>
+      <text class="tm tpc" x="479" y="268" text-anchor="middle">rewritten</text>
+      <rect class="box-pc" x="540" y="248" width="400" height="54" rx="6"/>
+      <text class="tb" x="556" y="271">Shaders finished on your PC</text>
+      <text class="tm" x="556" y="289">HLSL to DXIL, your driver compiles the rest</text>
+
+      <!-- row 4 -->
+      <rect class="box-ps" x="20" y="314" width="400" height="54" rx="6"/>
+      <text class="tb" x="36" y="337">Custom SSD and hardware decompressor</text>
+      <text class="tm" x="36" y="355">5.5 GB/s raw, Kraken unpacks data at no CPU cost</text>
+      <line class="ln-pc" x1="424" y1="341" x2="534" y2="341" marker-end="url(#a2pc)"/>
+      <text class="tm tpc" x="479" y="334" text-anchor="middle">reworked</text>
+      <rect class="box-pc" x="540" y="314" width="400" height="54" rx="6"/>
+      <text class="tb" x="556" y="337">Any drive, CPU or GPU decompression</text>
+      <text class="tm" x="556" y="355">DirectStorage helps, unpacking still costs cycles</text>
+
+      <!-- row 5 -->
+      <rect class="box-ps" x="20" y="380" width="400" height="54" rx="6"/>
+      <text class="tb" x="36" y="403">16 GB unified memory</text>
+      <text class="tm" x="36" y="421">CPU and GPU read the same pool</text>
+      <line class="ln-pc" x1="424" y1="407" x2="534" y2="407" marker-end="url(#a2pc)"/>
+      <text class="tm tpc" x="479" y="400" text-anchor="middle">reworked</text>
+      <rect class="box-pc" x="540" y="380" width="400" height="54" rx="6"/>
+      <text class="tb" x="556" y="403">System RAM plus separate VRAM</text>
+      <text class="tm" x="556" y="421">data copied over PCIe, VRAM budget varies</text>
+
+      <!-- row 6 -->
+      <rect class="box" x="20" y="446" width="400" height="54" rx="6"/>
+      <text class="tb" x="36" y="469">AMD Zen 2 CPU</text>
+      <text class="tm" x="36" y="487">x86-64 instruction set</text>
+      <line class="ln" x1="424" y1="473" x2="534" y2="473" marker-end="url(#a2)"/>
+      <text class="tm" x="479" y="466" text-anchor="middle">same family</text>
+      <rect class="box" x="540" y="446" width="400" height="54" rx="6"/>
+      <text class="tb" x="556" y="469">Any modern x86-64 CPU</text>
+      <text class="tm" x="556" y="487">Intel or AMD, same instruction set</text>
+    </svg>
+    </div>
+    <figcaption>What a port actually changes, top of the software stack to the bottom. Grey rows carry over; coloured rows are the porting work. Most of a port's months go into the graphics, shader, loading and memory rows.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="shaders">
+  <h2 id="shaders">Why ports stutter or say "compiling shaders"</h2>
+  <p>A shader is a small program the GPU runs for every lighting, material and particle effect. A PS5 has exactly one GPU design, so the studio compiles every shader to final machine code before release. A PC can have any of thousands of GPUs and driver versions, so the game ships shaders in an in-between format and your graphics driver finishes the job on your machine.</p>
+  <figure>
+    <div class="svgwrap">
+    <svg viewBox="0 0 960 250" role="img" aria-label="On PS5, shaders go straight from the download to the GPU. On PC, there is an extra step where the driver compiles shaders for your GPU, which causes a hitch the first time an effect appears unless the game precompiles them.">
+      <defs>
+        <marker id="a3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+      </defs>
+      <text class="th tps" x="20" y="64">PS5</text>
+      <rect class="box-ps" x="110" y="30" width="170" height="56" rx="6"/>
+      <text class="tb" x="195" y="54" text-anchor="middle">Studio compiles</text>
+      <text class="tm" x="195" y="72" text-anchor="middle">to PS5 GPU code</text>
+      <line class="ln" x1="282" y1="58" x2="328" y2="58" marker-end="url(#a3)"/>
+      <rect class="box-ps" x="330" y="30" width="170" height="56" rx="6"/>
+      <text class="tb" x="415" y="54" text-anchor="middle">Download holds</text>
+      <text class="tm" x="415" y="72" text-anchor="middle">finished GPU code</text>
+      <line class="ln" x1="502" y1="58" x2="550" y2="58"/>
+      <line class="ln" x1="720" y1="58" x2="768" y2="58" marker-end="url(#a3)"/>
+      <rect class="dash" x="550" y="30" width="170" height="56" rx="6"/>
+      <text class="tm" x="635" y="63" text-anchor="middle">no step needed</text>
+      <rect class="box-ps" x="770" y="30" width="170" height="56" rx="6"/>
+      <text class="tb" x="855" y="54" text-anchor="middle">GPU runs it</text>
+      <text class="tm" x="855" y="72" text-anchor="middle">immediately</text>
+
+      <text class="th tpc" x="20" y="164">PC</text>
+      <rect class="box" x="110" y="130" width="170" height="56" rx="6"/>
+      <text class="tb" x="195" y="154" text-anchor="middle">Studio compiles</text>
+      <text class="tm" x="195" y="172" text-anchor="middle">HLSL to DXIL</text>
+      <line class="ln" x1="282" y1="158" x2="328" y2="158" marker-end="url(#a3)"/>
+      <rect class="box" x="330" y="130" width="170" height="56" rx="6"/>
+      <text class="tb" x="415" y="154" text-anchor="middle">Download holds</text>
+      <text class="tm" x="415" y="172" text-anchor="middle">GPU-neutral DXIL</text>
+      <line class="ln" x1="502" y1="158" x2="548" y2="158" marker-end="url(#a3)"/>
+      <rect class="box-pc" x="550" y="130" width="170" height="56" rx="6"/>
+      <text class="tb" x="635" y="154" text-anchor="middle">Driver compiles</text>
+      <text class="tm" x="635" y="172" text-anchor="middle">for your exact GPU</text>
+      <line class="ln" x1="722" y1="158" x2="768" y2="158" marker-end="url(#a3)"/>
+      <rect class="box" x="770" y="130" width="170" height="56" rx="6"/>
+      <text class="tb" x="855" y="154" text-anchor="middle">GPU runs it</text>
+      <text class="tm" x="855" y="172" text-anchor="middle">cached for next time</text>
+      <text class="t tpc" x="635" y="214" text-anchor="middle">hitch if this happens mid-game</text>
+      <text class="tm" x="635" y="234" text-anchor="middle">fix: precompile at launch, cache on disk</text>
+    </svg>
+    </div>
+    <figcaption>The PC path has one extra step. Good ports run it up front behind a "compiling shaders" screen. Ports that skip it compile mid-game and stutter the first time each effect appears. Updating your GPU driver clears the cache, so the screen comes back.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="memory">
+  <h2 id="memory">Why ports want more VRAM than you'd expect</h2>
+  <p>On PS5, the CPU and GPU read from one 16 GB pool, so a texture is loaded once and both sides use it. A PC splits memory in two. Graphics data has to be copied from system RAM across the PCIe bus into the graphics card's VRAM. A game designed around 16 GB of shared memory can overflow an 8 GB card, which shows up as blurry textures or stutter until you lower texture quality.</p>
+  <figure>
+    <div class="svgwrap">
+    <svg viewBox="0 0 960 230" role="img" aria-label="PS5 CPU and GPU share one 16 GB memory pool; on a PC the CPU uses system RAM, the GPU uses VRAM, and data is copied between them over PCIe.">
+      <defs>
+        <marker id="a4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+        <marker id="a4pc" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" class="arrowhead-pc"/></marker>
+      </defs>
+      <rect class="box" x="40" y="20" width="140" height="44" rx="6"/>
+      <text class="tb" x="110" y="47" text-anchor="middle">CPU</text>
+      <rect class="box" x="260" y="20" width="140" height="44" rx="6"/>
+      <text class="tb" x="330" y="47" text-anchor="middle">GPU</text>
+      <line class="ln" x1="110" y1="66" x2="110" y2="128" marker-start="url(#a4)" marker-end="url(#a4)"/>
+      <line class="ln" x1="330" y1="66" x2="330" y2="128" marker-start="url(#a4)" marker-end="url(#a4)"/>
+      <rect class="box-ps" x="40" y="130" width="360" height="56" rx="6"/>
+      <text class="tb" x="220" y="155" text-anchor="middle">16 GB GDDR6, shared</text>
+      <text class="tm" x="220" y="174" text-anchor="middle">448 GB/s, one copy of every asset</text>
+      <text class="th tps" x="220" y="220" text-anchor="middle">PS5</text>
+
+      <rect class="box" x="560" y="20" width="140" height="44" rx="6"/>
+      <text class="tb" x="630" y="47" text-anchor="middle">CPU</text>
+      <rect class="box" x="780" y="20" width="140" height="44" rx="6"/>
+      <text class="tb" x="850" y="47" text-anchor="middle">GPU</text>
+      <line class="ln" x1="630" y1="66" x2="630" y2="128" marker-start="url(#a4)" marker-end="url(#a4)"/>
+      <line class="ln" x1="850" y1="66" x2="850" y2="128" marker-start="url(#a4)" marker-end="url(#a4)"/>
+      <rect class="box" x="560" y="130" width="140" height="56" rx="6"/>
+      <text class="tb" x="630" y="155" text-anchor="middle">System RAM</text>
+      <text class="tm" x="630" y="174" text-anchor="middle">DDR4 / DDR5</text>
+      <rect class="box-pc" x="780" y="130" width="140" height="56" rx="6"/>
+      <text class="tb" x="850" y="155" text-anchor="middle">VRAM</text>
+      <text class="tm" x="850" y="174" text-anchor="middle">often 8 to 16 GB</text>
+      <line class="ln-pc" x1="702" y1="158" x2="778" y2="158" marker-end="url(#a4pc)"/>
+      <text class="tm tpc" x="740" y="150" text-anchor="middle">PCIe copy</text>
+      <text class="th tpc" x="740" y="220" text-anchor="middle">PC</text>
+    </svg>
+    </div>
+    <figcaption>One pool against two. Ports add texture-quality settings and streaming systems mainly to fit inside whatever VRAM your card has.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="gains">
+  <h2 id="gains">What a port adds, and what it asks of you</h2>
+  <div class="twocol">
+    <div class="panel">
+      <h3 class="pc">Things the PC version gains</h3>
+      <ul>
+        <li><strong>Unlocked frame rate</strong> beyond the console's 30, 40 or 60 fps modes.</li>
+        <li><strong>Upscalers and frame generation</strong>: DLSS, FSR and XeSS.</li>
+        <li><strong>Ultrawide and high resolutions</strong>, plus detailed graphics settings.</li>
+        <li><strong>Keyboard and mouse</strong>, Xbox pads, and DualSense with haptics and adaptive triggers when connected by USB.</li>
+        <li><strong>Mods</strong>, in many cases.</li>
+      </ul>
+    </div>
+    <div class="panel">
+      <h3 class="ps">Things to check before buying</h3>
+      <ul>
+        <li><strong>Minimum specs</strong>, especially VRAM and whether an SSD is required.</li>
+        <li><strong>PSN account</strong>: some ports have asked you to link one. Sony has since made it optional for several single-player titles; check the store page.</li>
+        <li><strong>Launch reviews</strong>: shader stutter and memory problems are most common in the first weeks and usually patched later.</li>
+        <li><strong>Steam Deck / Linux</strong>: many ports work through Proton, which translates Windows and DirectX calls to Linux and Vulkan.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<section aria-labelledby="streaming">
+  <h2 id="streaming">How streaming works instead</h2>
+  <p>With PS Remote Play, your PS5 does all the work. It renders the frame, compresses it like a video call, and sends it over your network. The PC app decompresses and shows it, and sends your button presses back. Picture quality depends on your connection, and every stage in the loop adds a little delay.</p>
+  <figure>
+    <div class="svgwrap">
+    <svg viewBox="0 0 960 140" role="img" aria-label="The Remote Play loop: button press, network to PS5, PS5 renders, video encode, network to PC, decode and display. Each stage adds delay.">
+      <defs>
+        <marker id="a5" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto"><path d="M0,0 L10,5 L0,10 z" class="arrowhead"/></marker>
+      </defs>
+      <rect class="box-pc" x="30" y="30" width="135" height="56" rx="6"/>
+      <text class="tb" x="97" y="54" text-anchor="middle">You press</text>
+      <text class="tm" x="97" y="72" text-anchor="middle">on the PC</text>
+      <line class="ln" x1="166" y1="58" x2="181" y2="58" marker-end="url(#a5)"/>
+      <rect class="box" x="183" y="30" width="135" height="56" rx="6"/>
+      <text class="tb" x="250" y="54" text-anchor="middle">Network</text>
+      <text class="tm" x="250" y="72" text-anchor="middle">input to PS5</text>
+      <line class="ln" x1="319" y1="58" x2="334" y2="58" marker-end="url(#a5)"/>
+      <rect class="box-ps" x="336" y="30" width="135" height="56" rx="6"/>
+      <text class="tb" x="403" y="54" text-anchor="middle">PS5 renders</text>
+      <text class="tm" x="403" y="72" text-anchor="middle">the frame</text>
+      <line class="ln" x1="472" y1="58" x2="487" y2="58" marker-end="url(#a5)"/>
+      <rect class="box-ps" x="489" y="30" width="135" height="56" rx="6"/>
+      <text class="tb" x="556" y="54" text-anchor="middle">Encode</text>
+      <text class="tm" x="556" y="72" text-anchor="middle">to video</text>
+      <line class="ln" x1="625" y1="58" x2="640" y2="58" marker-end="url(#a5)"/>
+      <rect class="box" x="642" y="30" width="135" height="56" rx="6"/>
+      <text class="tb" x="709" y="54" text-anchor="middle">Network</text>
+      <text class="tm" x="709" y="72" text-anchor="middle">video to PC</text>
+      <line class="ln" x1="778" y1="58" x2="793" y2="58" marker-end="url(#a5)"/>
+      <rect class="box-pc" x="795" y="30" width="135" height="56" rx="6"/>
+      <text class="tb" x="862" y="54" text-anchor="middle">Decode</text>
+      <text class="tm" x="862" y="72" text-anchor="middle">and display</text>
+      <polyline class="ln" points="30,104 30,112 930,112 930,104"/>
+      <text class="tm" x="480" y="132" text-anchor="middle">each stage adds delay; wired Ethernet on both ends keeps the total lowest</text>
+    </svg>
+    </div>
+    <figcaption>Streaming plays any PS5 game you own without a port, at the cost of video compression and some input lag. A local wired network usually feels close to playing on the console.</figcaption>
+  </figure>
+</section>
+
+<section aria-labelledby="emu">
+  <h2 id="emu">Why emulation is so far behind</h2>
+  <p>An emulator has to rebuild, in software, everything the port team replaced by hand: hundreds of PS5 operating system functions, Sony's graphics API, the GPU's command format and shader machine code, and the dedicated decompression hardware. The shared x86-64 CPU helps, because the game's CPU code can run directly instead of being translated instruction by instruction. The rest is a large reverse-engineering effort. PS4 emulators such as shadPS4 have only recently started running commercial games well, and PS5 emulation is several steps behind that.</p>
+  <p class="note">Emulators themselves are legal to build. Running a game on one requires dumping it from a console and disc you own. Downloading game files you don't own is piracy.</p>
+</section>
+
+<section aria-labelledby="summary">
+  <h2 id="summary">Side by side</h2>
+  <div class="tablewrap">
+  <table class="spec">
+    <thead><tr><th>Route</th><th>Where the game runs</th><th>What you need</th><th>Image quality</th><th>Game selection</th></tr></thead>
+    <tbody>
+      <tr><td><strong class="pc">PC port</strong></td><td>Your PC</td><td>A PC that meets the specs, and the PC version</td><td>Up to native, often beyond PS5</td><td>Only games Sony has ported</td></tr>
+      <tr><td><strong class="ps">Remote Play</strong></td><td>Your PS5</td><td>A PS5, the game, a good network</td><td>Compressed video</td><td>Your PS5 library</td></tr>
+      <tr><td><strong>Emulation</strong></td><td>Your PC, imitating a PS5</td><td>A game dumped from your own console</td><td>Not playable today</td><td>Effectively none yet</td></tr>
+    </tbody>
+  </table>
+  </div>
+</section>
+
+<footer>Hardware figures are Sony's published PS5 specifications. Port lists, PSN requirements and emulator progress change over time; check current store pages and project sites for the latest.</footer>
+
+</main>
+</body>
+</html>
