@@ -19,9 +19,13 @@ VideoHub is an Android app for tracking video uploads. Each video is stored once
 
 ## Download the APK
 
-1. Open the repository on GitHub and go to **Actions → Build APK**.
-2. Open the latest successful run and download the **VideoHub-apk** artifact (a zip file).
-3. Unzip it, copy `app-debug.apk` to your phone and install it. You may need to allow "Install unknown apps".
+Direct link (open it on your Android phone):
+
+**https://github.com/FiathSharma0007/Claude-/releases/latest/download/VideoHub.apk**
+
+After it downloads, tap the file to install it. You may need to allow "Install unknown apps" for your browser or file manager.
+
+Every push rebuilds the APK and updates this link. The same file is also on the repository's **Releases** page.
 
 ## Build it yourself
 
