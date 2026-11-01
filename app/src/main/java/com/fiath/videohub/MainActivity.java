@@ -15,6 +15,7 @@ import android.os.Bundle;
 import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.webkit.JavascriptInterface;
+import android.webkit.WebChromeClient;
 import android.webkit.MimeTypeMap;
 import android.webkit.WebResourceRequest;
 import android.webkit.WebSettings;
@@ -63,6 +64,8 @@ public class MainActivity extends Activity {
         s.setAllowContentAccess(true);
         s.setMediaPlaybackRequiresUserGesture(true);
 
+        // Needed so confirm()/alert() dialogs from the page are shown.
+        webView.setWebChromeClient(new WebChromeClient());
         webView.addJavascriptInterface(new Bridge(), "Android");
         YouTubeUploadService.listener = json ->
                 js("window.onYtUpload && window.onYtUpload(" + JSONObject.quote(json) + ")");

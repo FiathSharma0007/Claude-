@@ -1,12 +1,14 @@
 # Faith Finance
 
-Faith Finance is an Android app for tracking video uploads. Each video is stored once in a main content library and is tracked separately on four platforms: **YouTube, Instagram, Facebook and TikTok**.
+Faith Finance is an Android app for planning and tracking video uploads on **YouTube, Instagram, Facebook and TikTok**.
 
 ## How it works
 
 - **Separate platforms:** every video belongs to one platform (YouTube, Instagram, Facebook or TikTok). A video added in the Instagram section stays in Instagram, with its own title, description, hashtags, video file and thumbnail.
 - **From the gallery:** in **+ New Video**, choose the platform, then the video and thumbnail from your phone's gallery. A copy is kept inside the app.
-- **Checklist** (☑ in the bottom bar): every video appears there automatically, grouped by platform, with its own checkbox.
+- **Checklist** (☑ in the bottom bar) has two parts:
+  - **Content plan:** weeks of daily topics (Week 1 · Money Psychology · Day 1…Day 7) with round checkboxes and overall upload progress such as 1/38. Tick a topic after its video is uploaded. Add weeks and paste many topics at once (one per line). Tap a topic to edit it or to create its video for a platform.
+  - **Videos:** every video appears automatically, grouped by platform, with its own checkbox.
 - Each video has: upload checkbox, status, scheduled date and time, published URL and reminder notification. Overdue videos are marked.
 - **Library** shows all videos with a count per platform.
 

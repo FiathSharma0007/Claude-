@@ -212,3 +212,37 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .cl-item .lib-row { flex: 1; min-width: 0; cursor: pointer; }
 .cl-item .body b { display: block; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .prow .lib-row { flex: 1; min-width: 0; }
+
+/* Checklist: Content plan / Videos switch */
+.seg { display: flex; background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 4px; margin-bottom: 12px; }
+.seg button { flex: 1; background: transparent; padding: 9px; font-weight: 600; color: var(--muted); }
+.seg button.active { background: var(--accent); color: var(--accent-ink); }
+
+/* Content plan (Week / Day topics) */
+.plan-top { padding: 16px; }
+.plan-head { display: flex; align-items: center; justify-content: space-between; }
+.plan-head b { font-size: 19px; }
+.plan-count { font-size: 30px; font-weight: 800; color: var(--ok); }
+.plan-bar { height: 10px; margin: 12px 0 10px; }
+.plan-hint { color: var(--muted); font-size: 14px; margin-bottom: 12px; }
+.week { margin-top: 10px; }
+.week-head { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-radius: 12px;
+  background: var(--bg); border: 1px solid var(--line); cursor: pointer; }
+.week-head .body { flex: 1; min-width: 0; }
+.week-head b { font-size: 18px; }
+.week-count { padding: 4px 10px; border-radius: 999px; background: var(--line); font-weight: 700; font-size: 14px; }
+.week-count.full { background: var(--ok); color: #fff; }
+.chev-ico { font-size: 20px; color: var(--muted); width: 20px; text-align: center; }
+.topics { padding: 4px 2px 6px; }
+.topic { display: flex; gap: 12px; align-items: flex-start; padding: 10px 2px; }
+.topic .body { flex: 1; min-width: 0; cursor: pointer; }
+.topic .day { color: var(--muted); font-size: 13px; }
+.topic .ttl { font-size: 16px; line-height: 1.35; }
+.topic.done .ttl { color: var(--muted); }
+.round-check { flex: none; width: 30px; height: 30px; padding: 0; margin-top: 4px; border-radius: 50%;
+  background: transparent; border: 2px solid var(--muted); color: #000; font-size: 16px; font-weight: 800;
+  display: flex; align-items: center; justify-content: center; }
+.round-check.on { background: var(--text); border-color: var(--text); color: var(--card); }
+.week-actions { margin-top: 4px; }
+.add-week { width: 100%; margin: 4px 0 12px; padding: 13px; }
+#formSheet { max-height: 90vh; overflow-y: auto; }

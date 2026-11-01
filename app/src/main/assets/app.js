@@ -30,17 +30,38 @@
 
   var native = window.Android || null;
   // ui.tab: library | checklist | youtube | instagram | facebook | tiktok ; ui.page: null | 'accounts'
-  var ui = { tab: 'library', page: null, videoId: null, filters: {}, draft: null, copying: null };
+  var ui = { tab: 'library', page: null, videoId: null, filters: {}, draft: null, copying: null, form: null };
   var data = load();
 
   // ---------- storage + migration ----------
   function load() {
     var d = null;
     try { d = JSON.parse(localStorage.getItem(STORAGE_KEY) || 'null'); } catch (e) { d = null; }
-    if (!d || !Array.isArray(d.videos)) return { version: 2, videos: [] };
+    if (!d || !Array.isArray(d.videos)) d = { version: 2, videos: [] };
     if (d.version !== 2) d = migrateV1(d);
     d.videos.forEach(normalize);
+    if (!d.plan || !Array.isArray(d.plan.weeks)) d.plan = seedPlan();
     return d;
+  }
+  // Content plan: weeks of daily topics, ticked after the video is uploaded.
+  function seedPlan() {
+    return {
+      weeks: [{
+        id: 'w' + Date.now().toString(36),
+        name: 'Week 1',
+        subtitle: 'Money Psychology',
+        open: true,
+        topics: [
+          'Middle Class log ameer kyun nahi ban paate?',
+          'Hum jitna kamate hain utna bacha kyun nahi paate?',
+          'Rich Mindset vs Poor Mindset – asli difference kya hai?',
+          'Lifestyle Inflation aapko gareeb kaise banati hai?',
+          'Log dikhave ke liye karz kyun lete hain?',
+          'Kya paisa sach mein khushi khareed sakta hai?',
+          'Ameer log paisa kharch karne ke baare mein kaise sochte hain?'
+        ].map(function (t, i) { return { id: 't' + i + Date.now().toString(36), title: t, done: false }; })
+      }]
+    };
   }
   // v1: one shared video with 4 platform entries -> v2: one separate video per platform.
   function migrateV1(old) {
@@ -110,6 +131,7 @@
       title: title, description: description, hashtags: hashtags,
       video: draft && draft.video ? draft.video : null,
       thumb: draft && draft.thumb ? draft.thumb : null,
+      topicId: draft && draft.topicId ? draft.topicId : null,
       createdAt: Date.now()
     };
     normalize(v);
@@ -401,12 +423,198 @@
     $('view').innerHTML = html;
   }
 
-  // Checklist: every video appears automatically, grouped by platform, one checkbox each.
   function renderChecklist() {
+    var mode = ui.filters.clmode || 'plan';
+    var seg = '<div class="seg"><button class="' + (mode === 'plan' ? 'active' : '') + '" data-clmode="plan">Content plan</button>' +
+      '<button class="' + (mode === 'videos' ? 'active' : '') + '" data-clmode="videos">Videos</button></div>';
+    if (mode === 'plan') return renderPlan(seg);
+    return renderVideoChecklist(seg);
+  }
+
+  function planCounts() {
+    var total = 0, done = 0;
+    data.plan.weeks.forEach(function (w) {
+      w.topics.forEach(function (t) { total++; if (t.done) done++; });
+    });
+    return { total: total, done: done };
+  }
+  function findTopic(id) {
+    for (var i = 0; i < data.plan.weeks.length; i++) {
+      var w = data.plan.weeks[i];
+      for (var j = 0; j < w.topics.length; j++) if (w.topics[j].id === id) return { week: w, topic: w.topics[j], index: j };
+    }
+    return null;
+  }
+  function findWeek(id) {
+    return data.plan.weeks.filter(function (w) { return w.id === id; })[0] || null;
+  }
+
+  // Content plan (like: Upload progress 1/38, Week 1 · Money Psychology · 7 videos, Day 1…)
+  function renderPlan(seg) {
+    $('pageTitle').textContent = 'Upload Checklist';
+    var c = planCounts();
+    var html = seg + '<div class="card plan-top"><div class="plan-head"><b>Upload progress</b><span class="plan-count">' +
+      c.done + '/' + c.total + '</span></div>' +
+      '<div class="bar plan-bar"><i style="width:' + (c.total ? c.done / c.total * 100 : 0) + '%"></i></div>' +
+      '<div class="plan-hint">Video upload hone ke baad checkbox tick karte jaana.</div>';
+
+    if (!data.plan.weeks.length) html += '<div class="empty" style="padding:20px 0">Abhi koi week nahi hai. Neeche “+ Add week” dabao.</div>';
+    data.plan.weeks.forEach(function (w) {
+      var wd = w.topics.filter(function (t) { return t.done; }).length;
+      html += '<div class="week' + (w.open ? ' open' : '') + '">' +
+        '<div class="week-head" data-week-toggle="' + w.id + '"><div class="body"><b>' + esc(w.name) + '</b>' +
+        '<div class="meta">' + esc(w.subtitle ? w.subtitle + ' · ' : '') + w.topics.length + ' videos</div></div>' +
+        '<span class="week-count' + (wd === w.topics.length && wd ? ' full' : '') + '">' + wd + '/' + w.topics.length + '</span>' +
+        '<span class="chev-ico">' + (w.open ? '&#8963;' : '&#8964;') + '</span></div>';
+      if (w.open) {
+        html += '<div class="topics">';
+        w.topics.forEach(function (t, i) {
+          var linked = data.videos.filter(function (v) { return v.topicId === t.id; });
+          html += '<div class="topic' + (t.done ? ' done' : '') + '">' +
+            '<button class="round-check' + (t.done ? ' on' : '') + '" data-topic-check="' + t.id + '" aria-label="Uploaded">' + (t.done ? '&#10003;' : '') + '</button>' +
+            '<div class="body tap" data-topic-open="' + t.id + '"><div class="day">Day ' + (i + 1) + '</div>' +
+            '<div class="ttl">' + esc(t.title) + '</div>' +
+            (linked.length ? '<div class="pills">' + linked.map(function (v) {
+              return '<span class="pill ' + (v.status === 'uploaded' ? 'uploaded' : '') + '"><span class="dot ' + v.platform + '"></span>' +
+                pname(v.platform) + (v.status === 'uploaded' ? ' &#10003;' : '') + '</span>';
+            }).join('') + '</div>' : '') + '</div></div>';
+        });
+        html += '<div class="row week-actions"><button class="small" data-topic-add="' + w.id + '">+ Add topics</button>' +
+          '<button class="small ghost" data-week-edit="' + w.id + '">Edit week</button></div></div>';
+      }
+      html += '</div>';
+    });
+    html += '</div><button class="primary add-week" data-week-add="1">+ Add week</button>';
+    $('view').innerHTML = html;
+  }
+
+  // ---------- small form sheet (week / topic editing) ----------
+  function openForm(opts) {
+    ui.form = opts;
+    var h = '<h2>' + esc(opts.title) + '</h2>' + (opts.hint ? '<p class="hint">' + opts.hint + '</p>' : '');
+    (opts.fields || []).forEach(function (f) {
+      h += '<label>' + esc(f.label) + (f.multiline
+        ? '<textarea data-ff="' + f.key + '" rows="' + (f.rows || 3) + '" placeholder="' + esc(f.placeholder || '') + '">' + esc(f.value || '') + '</textarea>'
+        : '<input data-ff="' + f.key + '" value="' + esc(f.value || '') + '" placeholder="' + esc(f.placeholder || '') + '">') + '</label>';
+    });
+    if (opts.extra) h += opts.extra;
+    h += '<div class="row end">' + (opts.danger ? '<button class="danger" data-fa="delete" style="margin-right:auto">' + esc(opts.danger) + '</button>' : '') +
+      '<button class="ghost" data-fa="cancel">Cancel</button><button class="primary" data-fa="save">' + esc(opts.saveLabel || 'Save') + '</button></div>';
+    $('formSheet').innerHTML = h;
+    $('formModal').classList.remove('hidden');
+  }
+  function closeForm() { ui.form = null; $('formModal').classList.add('hidden'); }
+  function formValues() {
+    var o = {};
+    var els = $('formSheet').querySelectorAll('[data-ff]');
+    for (var i = 0; i < els.length; i++) o[els[i].getAttribute('data-ff')] = els[i].value;
+    return o;
+  }
+  function lines(s) {
+    return String(s || '').split('\n').map(function (x) { return x.replace(/^\s*(day\s*\d+\s*[:.\-–)]?\s*|\d+\s*[.)\-–]\s*)/i, '').trim(); })
+      .filter(function (x) { return x; });
+  }
+  function newTopic(title) { return { id: 't' + uid(), title: title, done: false }; }
+
+  function addWeekForm() {
+    openForm({
+      title: 'Add week',
+      fields: [
+        { key: 'name', label: 'Week name', value: 'Week ' + (data.plan.weeks.length + 1) },
+        { key: 'subtitle', label: 'Theme', placeholder: 'e.g. Personal Finance' },
+        { key: 'topics', label: 'Topics (ek line mein ek topic)', multiline: true, rows: 7, placeholder: 'Day 1 ka topic\nDay 2 ka topic\n…' }
+      ],
+      onSave: function (v) {
+        if (!v.name.trim()) { toast('Week name likho'); return false; }
+        data.plan.weeks.push({ id: 'w' + uid(), name: v.name.trim(), subtitle: v.subtitle.trim(), open: true, topics: lines(v.topics).map(newTopic) });
+        save();
+        return true;
+      }
+    });
+  }
+  function editWeekForm(w) {
+    openForm({
+      title: 'Edit week',
+      fields: [
+        { key: 'name', label: 'Week name', value: w.name },
+        { key: 'subtitle', label: 'Theme', value: w.subtitle }
+      ],
+      danger: 'Delete week',
+      onSave: function (v) {
+        if (!v.name.trim()) { toast('Week name likho'); return false; }
+        w.name = v.name.trim(); w.subtitle = v.subtitle.trim(); save(); return true;
+      },
+      onDelete: function () {
+        if (!confirm('Delete "' + w.name + '" and its ' + w.topics.length + ' topics?')) return false;
+        data.plan.weeks = data.plan.weeks.filter(function (x) { return x !== w; });
+        save();
+        return true;
+      }
+    });
+  }
+  function addTopicsForm(w) {
+    openForm({
+      title: 'Add topics to ' + w.name,
+      hint: 'Ek line mein ek topic. Day number apne aap lagega (Day ' + (w.topics.length + 1) + ' se).',
+      fields: [{ key: 'topics', label: 'Topics', multiline: true, rows: 6 }],
+      saveLabel: 'Add',
+      onSave: function (v) {
+        var ts = lines(v.topics);
+        if (!ts.length) { toast('Kam se kam ek topic likho'); return false; }
+        ts.forEach(function (t) { w.topics.push(newTopic(t)); });
+        save();
+        return true;
+      }
+    });
+  }
+  function topicForm(id) {
+    var f = findTopic(id);
+    if (!f) return;
+    openForm({
+      title: f.week.name + ' · Day ' + (f.index + 1),
+      fields: [{ key: 'title', label: 'Topic', value: f.topic.title, multiline: true, rows: 2 }],
+      extra: '<div class="plat-label" style="margin-top:12px">Is topic ka video banao</div><div class="platform-pick">' +
+        PLATFORMS.map(function (p) {
+          return '<button type="button" class="pchoice" data-topic-video="' + p.key + '"><span class="dot ' + p.key + '"></span>' + p.name + '</button>';
+        }).join('') + '</div>',
+      danger: 'Delete',
+      onSave: function (v) {
+        if (!v.title.trim()) { toast('Topic likho'); return false; }
+        f.topic.title = v.title.trim(); save(); return true;
+      },
+      onDelete: function () {
+        if (!confirm('Delete this topic?')) return false;
+        f.week.topics.splice(f.index, 1);
+        save();
+        return true;
+      },
+      onVideo: function (platform, v) {
+        closeForm();
+        openModal({ platform: platform, title: (v.title || f.topic.title).trim(), topicId: f.topic.id });
+      }
+    });
+  }
+
+  $('formModal').addEventListener('click', function (e) {
+    var o = ui.form;
+    if (!o) return;
+    if (e.target === $('formModal')) { closeForm(); return; }
+    var tv = e.target.closest('[data-topic-video]');
+    if (tv && o.onVideo) { o.onVideo(tv.getAttribute('data-topic-video'), formValues()); return; }
+    var a = e.target.closest('[data-fa]');
+    if (!a) return;
+    var act = a.getAttribute('data-fa');
+    if (act === 'cancel') { closeForm(); return; }
+    var ok = act === 'save' ? o.onSave(formValues()) : (o.onDelete ? o.onDelete() : true);
+    if (ok !== false) { closeForm(); render(); }
+  });
+
+  // Video checklist: every video appears automatically, grouped by platform, one checkbox each.
+  function renderVideoChecklist(seg) {
     $('pageTitle').textContent = 'Upload Checklist';
     var total = data.videos.length;
     var done = data.videos.filter(function (v) { return v.status === 'uploaded'; }).length;
-    var html = '<div class="summary">' +
+    var html = seg + '<div class="summary">' +
       '<div class="stat"><b>' + total + '</b><span>Videos</span></div>' +
       '<div class="stat"><b>' + done + '</b><span>Uploaded</span></div>' +
       '<div class="stat"><b>' + (total - done) + '</b><span>Left</span></div></div>';
@@ -609,6 +817,7 @@
   function openAccounts() { ui.page = 'accounts'; ui.videoId = null; window.scrollTo(0, 0); render(); }
 
   window.handleBack = function () {
+    if (!$('formModal').classList.contains('hidden')) { closeForm(); return true; }
     if (!$('modal').classList.contains('hidden')) { closeModal(); return true; }
     if (ui.videoId || ui.page) { closeVideo(); return true; }
     if (ui.tab !== 'library') { ui.tab = 'library'; render(); return true; }
@@ -645,16 +854,18 @@
     $('newHeading').textContent = key ? 'New ' + pname(key) + ' video' : 'New video';
     $('newTitleLabel').firstChild.textContent = (key ? pname(key) + ' title' : 'Title');
   }
-  function openModal() {
-    $('newTitle').value = '';
+  // opts (optional): { platform, title, topicId } when creating a video from a plan topic
+  function openModal(opts) {
+    opts = opts && opts.title !== undefined ? opts : {};
+    $('newTitle').value = opts.title || '';
     $('newDesc').value = '';
     $('newTags').value = '';
-    ui.draft = { id: uid(), video: null, thumb: null, platform: null };
+    ui.draft = { id: uid(), video: null, thumb: null, platform: null, topicId: opts.topicId || null };
     ui.copying = null;
     $('platformPick').innerHTML = PLATFORMS.map(function (p) {
       return '<button type="button" class="pchoice ' + p.key + '" data-plat="' + p.key + '"><span class="dot ' + p.key + '"></span>' + p.name + '</button>';
     }).join('');
-    setDraftPlatform(isPlatform(ui.tab) ? ui.tab : null);
+    setDraftPlatform(opts.platform || (isPlatform(ui.tab) ? ui.tab : null));
     renderDraftMedia();
     $('modal').classList.remove('hidden');
   }
@@ -717,6 +928,30 @@
     if (go) { ui.tab = go.getAttribute('data-tab-go'); render(); window.scrollTo(0, 0); return; }
     if (t.matches('input[data-quick]')) return;
     if (t.closest('[data-accounts]')) { openAccounts(); return; }
+
+    // Content plan
+    var cm = t.closest('[data-clmode]');
+    if (cm) { ui.filters.clmode = cm.getAttribute('data-clmode'); render(); return; }
+    var wt = t.closest('[data-week-toggle]');
+    if (wt) { var w0 = findWeek(wt.getAttribute('data-week-toggle')); w0.open = !w0.open; save(); render(); return; }
+    var tc = t.closest('[data-topic-check]');
+    if (tc) {
+      var ft = findTopic(tc.getAttribute('data-topic-check'));
+      ft.topic.done = !ft.topic.done;
+      ft.topic.doneAt = ft.topic.done ? Date.now() : null;
+      save();
+      var pc = planCounts();
+      if (ft.topic.done) toast('Day ' + (ft.index + 1) + ' done ✓ · ' + pc.done + '/' + pc.total);
+      render();
+      return;
+    }
+    var to = t.closest('[data-topic-open]');
+    if (to) { topicForm(to.getAttribute('data-topic-open')); return; }
+    var ta = t.closest('[data-topic-add]');
+    if (ta) { addTopicsForm(findWeek(ta.getAttribute('data-topic-add'))); return; }
+    var we = t.closest('[data-week-edit]');
+    if (we) { editWeekForm(findWeek(we.getAttribute('data-week-edit'))); return; }
+    if (t.closest('[data-week-add]')) { addWeekForm(); return; }
     var open = t.closest('[data-open]');
     if (open) { openVideo(open.getAttribute('data-open')); return; }
 
