@@ -24,22 +24,25 @@ jobs:
         run: |
           chmod +x gradlew
           ./gradlew --no-daemon assembleDebug
-          cp app/build/outputs/apk/debug/app-debug.apk VideoHub.apk
+          cp app/build/outputs/apk/debug/app-debug.apk FaithFinance.apk
+          cp FaithFinance.apk VideoHub.apk
 
       - uses: actions/upload-artifact@v4
         with:
-          name: VideoHub-apk
-          path: VideoHub.apk
+          name: FaithFinance-apk
+          path: FaithFinance.apk
 
       # Publishes the APK as a direct download link:
-      # https://github.com/<owner>/<repo>/releases/latest/download/VideoHub.apk
+      # https://github.com/<owner>/<repo>/releases/latest/download/FaithFinance.apk
       - name: Publish APK to GitHub Releases
         uses: softprops/action-gh-release@v2
         with:
           tag_name: latest-apk
-          name: VideoHub (latest build)
+          name: Faith Finance (latest build)
           body: |
-            Latest VideoHub APK, built from commit ${{ github.sha }}.
-            Download VideoHub.apk below and install it on your Android phone.
-          files: VideoHub.apk
+            Latest Faith Finance APK, built from commit ${{ github.sha }}.
+            Download FaithFinance.apk below and install it on your Android phone.
+          files: |
+            FaithFinance.apk
+            VideoHub.apk
           make_latest: true

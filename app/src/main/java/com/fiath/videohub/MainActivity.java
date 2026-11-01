@@ -12,6 +12,7 @@ import android.database.Cursor;
 import android.net.Uri;
 import android.os.Build;
 import android.os.Bundle;
+import android.provider.MediaStore;
 import android.provider.OpenableColumns;
 import android.webkit.JavascriptInterface;
 import android.webkit.MimeTypeMap;
@@ -34,6 +35,7 @@ public class MainActivity extends Activity {
 
     static final String EXTRA_REMINDER_ID = "reminderId";
     private static final int REQ_PICK = 1001;
+    private static final int REQ_STORAGE = 1002;
 
     private WebView webView;
     private boolean pageLoaded = false;
@@ -144,17 +146,51 @@ public class MainActivity extends Activity {
     private void startPicker(String videoId, String kind) {
         pickVideoId = videoId;
         pickKind = kind;
-        Intent i = new Intent(Intent.ACTION_OPEN_DOCUMENT);
-        i.addCategory(Intent.CATEGORY_OPENABLE);
-        i.setType("video".equals(kind) ? "video/*" : "image/*");
-        try {
-            startActivityForResult(i, REQ_PICK);
-        } catch (ActivityNotFoundException e) {
-            Intent g = new Intent(Intent.ACTION_GET_CONTENT);
-            g.addCategory(Intent.CATEGORY_OPENABLE);
-            g.setType("video".equals(kind) ? "video/*" : "image/*");
-            startActivityForResult(g, REQ_PICK);
+        // Android 12 and older: the gallery needs read access to the phone's media.
+        if (Build.VERSION.SDK_INT < 33
+                && checkSelfPermission(Manifest.permission.READ_EXTERNAL_STORAGE)
+                != PackageManager.PERMISSION_GRANTED) {
+            requestPermissions(new String[]{Manifest.permission.READ_EXTERNAL_STORAGE}, REQ_STORAGE);
+            return; // picker opens from onRequestPermissionsResult
         }
+        launchGallery();
+    }
+
+    @Override
+    public void onRequestPermissionsResult(int requestCode, String[] permissions, int[] results) {
+        super.onRequestPermissionsResult(requestCode, permissions, results);
+        if (requestCode == REQ_STORAGE && pickKind != null) launchGallery();
+    }
+
+    /** Opens the phone's photo gallery for a video ("video") or an image ("thumb"). */
+    @SuppressWarnings("deprecation")
+    private void launchGallery() {
+        boolean video = "video".equals(pickKind);
+        String type = video ? "video/*" : "image/*";
+
+        java.util.List<Intent> tries = new java.util.ArrayList<>();
+        if (Build.VERSION.SDK_INT >= 33) {
+            // Android photo picker (gallery with albums).
+            tries.add(new Intent(MediaStore.ACTION_PICK_IMAGES).setType(type));
+        }
+        tries.add(new Intent(Intent.ACTION_PICK, video
+                ? MediaStore.Video.Media.EXTERNAL_CONTENT_URI
+                : MediaStore.Images.Media.EXTERNAL_CONTENT_URI));
+        Intent getContent = new Intent(Intent.ACTION_GET_CONTENT);
+        getContent.addCategory(Intent.CATEGORY_OPENABLE);
+        getContent.setType(type);
+        tries.add(getContent);
+
+        for (Intent i : tries) {
+            try {
+                startActivityForResult(i, REQ_PICK);
+                return;
+            } catch (ActivityNotFoundException ignored) {
+            }
+        }
+        Toast.makeText(this, "No gallery app found", Toast.LENGTH_SHORT).show();
+        pickVideoId = null;
+        pickKind = null;
     }
 
     @Override

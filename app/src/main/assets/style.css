@@ -125,6 +125,33 @@ input:focus, textarea:focus, select:focus { outline: 2px solid var(--accent); ou
 .check-row .cr-name { flex: 1; font-weight: 600; }
 .check-row small { display: block; font-weight: 400; color: var(--muted); font-size: 12px; }
 .check-row .pill { white-space: nowrap; }
+.nav-ico { font-size: 17px; line-height: 14px; height: 14px; }
+.bottomnav button.nav-check .check-ico { color: var(--ok); font-size: 20px; }
+.bottomnav button.nav-check.active { box-shadow: inset 0 3px 0 var(--ok); }
+
+.draft-row { display: flex; align-items: center; gap: 10px; padding: 10px; margin-top: 8px;
+  border: 1px dashed var(--line); border-radius: 12px; background: var(--bg); font-size: 14px; }
+.draft-row .body { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+.draft-row .ok { color: var(--ok); font-size: 12px; }
+.mini { width: 56px; height: 32px; object-fit: cover; border-radius: 6px; flex: none; }
+.mini-icon { width: 56px; text-align: center; font-size: 24px; flex: none; }
+
+.cl-card .lib-row { cursor: pointer; }
+.cl-thumb { width: 72px; height: 42px; flex: none; object-fit: cover; border-radius: 8px; background: var(--bg); border: 1px solid var(--line); }
+.cl-thumb.none { display: flex; align-items: center; justify-content: center; font-size: 10px; color: var(--muted); }
+.cl-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; margin-top: 12px; }
+@media (max-width: 360px) { .cl-grid { grid-template-columns: repeat(2, 1fr); } }
+.cl-box { position: relative; display: flex; flex-direction: column; align-items: center; gap: 4px; margin: 0;
+  padding: 8px 2px; border-radius: 10px; border: 2px solid var(--line); color: var(--text); font-size: 11px; font-weight: 600; cursor: pointer; }
+.cl-box input { position: absolute; opacity: 0; width: 1px; height: 1px; margin: 0; }
+.cl-tick { width: 26px; height: 26px; border-radius: 7px; border: 2px solid var(--muted); display: flex;
+  align-items: center; justify-content: center; color: #fff; font-size: 17px; font-weight: 700; }
+.cl-box.youtube { border-color: color-mix(in srgb, var(--youtube) 35%, transparent); }
+.cl-box.instagram { border-color: color-mix(in srgb, var(--instagram) 35%, transparent); }
+.cl-box.facebook { border-color: color-mix(in srgb, var(--facebook) 35%, transparent); }
+.cl-box.tiktok { border-color: color-mix(in srgb, var(--tiktok) 35%, transparent); }
+.cl-box.on { background: color-mix(in srgb, var(--ok) 12%, transparent); border-color: var(--ok); }
+.cl-box.on .cl-tick { background: var(--ok); border-color: var(--ok); }
 .empty { text-align: center; color: var(--muted); padding: 40px 10px; }
 .hint { color: var(--muted); font-size: 13px; margin: 4px 0 8px; }
 .section-title { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 18px 0 8px; }

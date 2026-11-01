@@ -25,7 +25,7 @@
 
   var native = window.Android || null;
   var data = load();
-  var ui = { tab: 'library', videoId: null, focus: null, filters: {} };
+  var ui = { tab: 'library', videoId: null, focus: null, filters: {}, draft: null, copying: null };
 
   // ---------- storage ----------
   function load() {
@@ -75,14 +75,14 @@
     });
   }
 
-  function createVideo(title, description, hashtags) {
+  function createVideo(title, description, hashtags, draft) {
     var v = {
-      id: uid(),
+      id: draft && draft.id ? draft.id : uid(),
       title: title,
       description: description,
       hashtags: hashtags,
-      video: null,
-      thumb: null,
+      video: draft && draft.video ? draft.video : null,
+      thumb: draft && draft.thumb ? draft.thumb : null,
       createdAt: Date.now()
     };
     ensurePlatforms(v);
@@ -191,6 +191,7 @@
 
   // ---------- media (video file + thumbnail) ----------
   function pickMedia(v, kind) {
+    ui.copying = null;
     if (native) { native.pickMedia(v.id, kind); return; }
     // Browser fallback (for testing only; not saved after reload).
     var inp = document.createElement('input');
@@ -208,6 +209,7 @@
   window.onMediaProgress = function (id, kind, pct) {
     var first = !ui.copying;
     ui.copying = { id: id, kind: kind, pct: pct };
+    if (ui.draft && ui.draft.id === id) { renderDraftMedia(); return; }
     if (ui.videoId !== id) return;
     var el = $('mediaProgress');
     if (first || !el) { render(); return; }
@@ -216,9 +218,19 @@
   };
   window.onMediaPicked = function (id, kind, path, name, size) {
     ui.copying = null;
+    var field = kind === 'video' ? 'video' : 'thumb';
+    // Picked while filling the "New video" form
+    if (ui.draft && ui.draft.id === id) {
+      deleteMedia(ui.draft[field]);
+      ui.draft[field] = { path: path, name: name, size: size };
+      if (kind === 'video' && !$('newTitle').value.trim()) {
+        $('newTitle').value = String(name || '').replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ');
+      }
+      renderDraftMedia();
+      return;
+    }
     var v = findVideo(id);
     if (!v) { if (native) native.deleteMedia(path); return; }
-    var field = kind === 'video' ? 'video' : 'thumb';
     deleteMedia(v[field]);
     v[field] = { path: path, name: name, size: size };
     save();
@@ -228,11 +240,30 @@
   window.onMediaError = function (id, kind, msg) {
     ui.copying = null;
     toast('Could not save file: ' + msg);
-    if (ui.videoId === id) render();
+    if (ui.draft && ui.draft.id === id) renderDraftMedia();
+    else if (ui.videoId === id) render();
   };
   window.onMediaCancel = function () {
-    if (ui.copying) { ui.copying = null; render(); }
+    if (ui.copying) { ui.copying = null; if (ui.draft) renderDraftMedia(); else render(); }
   };
+
+  // Media row inside the "New video" form
+  function renderDraftMedia() {
+    var d = ui.draft;
+    if (!d) return;
+    var busy = ui.copying && ui.copying.id === d.id ? ui.copying : null;
+    function row(kind, icon, label) {
+      var m = d[kind];
+      var state;
+      if (busy && busy.kind === kind) state = '<span class="meta">Saving… ' + busy.pct + '%</span>';
+      else if (m) state = '<span class="ok">&#10003; ' + esc(m.name || 'Selected') + (m.size ? ' · ' + fmtSize(m.size) : '') + '</span>';
+      else state = '<span class="meta">Not selected</span>';
+      var preview = kind === 'thumb' && m ? '<img class="mini" alt="" src="' + esc(mediaSrc(m.path)) + '">' : '<span class="mini-icon">' + icon + '</span>';
+      return '<div class="draft-row">' + preview + '<div class="body"><b>' + label + '</b><br>' + state + '</div>' +
+        '<button type="button" class="small" data-draftpick="' + kind + '">' + (m ? 'Change' : 'Gallery') + '</button></div>';
+    }
+    $('draftMedia').innerHTML = row('video', '&#127909;', 'Video from gallery') + row('thumb', '&#128444;', 'Thumbnail from gallery');
+  }
 
   function statusPill(pe) {
     if (isOverdue(pe)) return '<span class="pill overdue">Overdue</span>';
@@ -264,11 +295,57 @@
     if (ui.videoId && findVideo(ui.videoId)) return renderDetail(findVideo(ui.videoId));
     ui.videoId = null;
     if (ui.tab === 'library') return renderLibrary();
+    if (ui.tab === 'checklist') return renderChecklist();
     return renderPlatform(ui.tab);
   }
 
+  function thumbHtml(v, cls) {
+    return v.thumb && v.thumb.path
+      ? '<img class="' + cls + '" alt="" src="' + esc(mediaSrc(v.thumb.path)) + '">'
+      : '<div class="' + cls + ' none">' + (v.video ? '&#127909;' : 'No video') + '</div>';
+  }
+
+  // Checklist section: every video added to the library shows up here automatically,
+  // with its own checkbox for each platform.
+  function renderChecklist() {
+    $('pageTitle').textContent = 'Upload Checklist';
+    var vids = data.videos.slice().sort(function (a, b) { return b.createdAt - a.createdAt; });
+    var total = vids.length;
+    var ticks = 0;
+    vids.forEach(function (v) { ticks += doneCount(v); });
+    var f = ui.filters.checklist || 'all';
+    if (f === 'pending') vids = vids.filter(function (v) { return doneCount(v) < PLATFORMS.length; });
+    if (f === 'done') vids = vids.filter(function (v) { return doneCount(v) === PLATFORMS.length; });
+
+    var html = '<div class="summary">' +
+      '<div class="stat"><b>' + total + '</b><span>Videos</span></div>' +
+      '<div class="stat"><b>' + ticks + '/' + total * PLATFORMS.length + '</b><span>Uploads done</span></div>' +
+      '<div class="stat"><b>' + (total * PLATFORMS.length - ticks) + '</b><span>Uploads left</span></div></div>';
+    html += chips('checklist', [{ k: 'all', n: 'All' }, { k: 'pending', n: 'Pending' }, { k: 'done', n: 'All 4 done' }]);
+
+    if (!vids.length) {
+      html += '<div class="empty">' + (total ? 'Nothing in this filter.' :
+        'No videos yet.<br>Every video you add with <b>+ New Video</b> appears here automatically with 4 checkboxes.') + '</div>';
+    }
+    vids.forEach(function (v) {
+      var n = doneCount(v);
+      html += '<div class="card cl-card"><div class="lib-row tap" data-open="' + v.id + '">' + thumbHtml(v, 'cl-thumb') +
+        '<div class="body"><h3>' + esc(v.title) + '</h3>' +
+        '<div class="meta">' + n + '/' + PLATFORMS.length + ' platforms completed</div>' +
+        '<div class="bar" style="margin-top:6px"><i style="width:' + (n / PLATFORMS.length * 100) + '%"></i></div>' +
+        '</div></div><div class="cl-grid">' +
+        PLATFORMS.map(function (p) {
+          var on = v.platforms[p.key].status === 'uploaded';
+          return '<label class="cl-box ' + p.key + (on ? ' on' : '') + '">' +
+            '<input type="checkbox" data-quick="' + v.id + '" data-p="' + p.key + '"' + (on ? ' checked' : '') + '>' +
+            '<span class="cl-tick">' + (on ? '&#10003;' : '') + '</span>' + p.name + '</label>';
+        }).join('') + '</div></div>';
+    });
+    $('view').innerHTML = html;
+  }
+
   function renderLibrary() {
-    $('pageTitle').textContent = 'Content Library';
+    $('pageTitle').textContent = 'Faith Finance';
     var vids = data.videos.slice().sort(function (a, b) { return b.createdAt - a.createdAt; });
     var total = vids.length;
     var complete = vids.filter(function (v) { return doneCount(v) === PLATFORMS.length; }).length;
@@ -287,9 +364,7 @@
         'No videos yet.<br>Tap <b>+ New Video</b>. Each video is created once and shows up on all 4 platforms.') + '</div>';
     }
     vids.forEach(function (v) {
-      var thumb = v.thumb && v.thumb.path
-        ? '<img class="lib-thumb" alt="" src="' + esc(mediaSrc(v.thumb.path)) + '">'
-        : '<div class="lib-thumb none">' + (v.video ? '&#127909;' : 'No video') + '</div>';
+      var thumb = thumbHtml(v, 'lib-thumb');
       html += '<div class="card tap" data-open="' + v.id + '"><div class="lib-row">' + thumb +
         '<div class="body"><h3>' + esc(v.title) + '</h3>' +
         '<div class="meta">Created ' + esc(fmtDate(v.createdAt)) +
@@ -498,19 +573,39 @@
     $('newTitle').value = '';
     $('newDesc').value = '';
     $('newTags').value = '';
+    ui.draft = { id: uid(), video: null, thumb: null };
+    ui.copying = null;
+    renderDraftMedia();
     $('modal').classList.remove('hidden');
-    $('newTitle').focus();
   }
-  function closeModal() { $('modal').classList.add('hidden'); }
+  // keepMedia: true when the draft became a real video
+  function closeModal(keepMedia) {
+    if (ui.draft && keepMedia !== true) {
+      deleteMedia(ui.draft.video);
+      deleteMedia(ui.draft.thumb);
+    }
+    ui.draft = null;
+    ui.copying = null;
+    $('modal').classList.add('hidden');
+  }
   $('newBtn').addEventListener('click', openModal);
-  $('cancelNew').addEventListener('click', closeModal);
-  $('modal').addEventListener('click', function (e) { if (e.target === $('modal')) closeModal(); });
+  $('cancelNew').addEventListener('click', function () { closeModal(); });
+  $('modal').addEventListener('click', function (e) {
+    if (e.target === $('modal')) { closeModal(); return; }
+    var dp = e.target.closest('[data-draftpick]');
+    if (dp && ui.draft) {
+      if (ui.copying) { toast('Please wait, a file is still being saved'); return; }
+      pickMedia(ui.draft, dp.getAttribute('data-draftpick'));
+    }
+  });
   $('createNew').addEventListener('click', function () {
+    if (ui.copying) { toast('Please wait, the file is still being saved'); return; }
     var title = $('newTitle').value.trim();
     if (!title) { toast('Please enter a title'); $('newTitle').focus(); return; }
-    var v = createVideo(title, $('newDesc').value.trim(), $('newTags').value.trim());
-    closeModal();
-    toast('Video added to YouTube, Instagram, Facebook & TikTok');
+    var d = ui.draft;
+    var v = createVideo(title, $('newDesc').value.trim(), $('newTags').value.trim(), d);
+    closeModal(true);
+    toast('Added to Checklist, YouTube, Instagram, Facebook & TikTok');
     openVideo(v.id);
   });
 
