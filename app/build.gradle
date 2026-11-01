@@ -14,9 +14,24 @@ android {
         versionName '1.0'
     }
 
+    // Fixed key so every build can be installed over the previous one
+    // (a new key per build would force uninstalling and losing data).
+    signingConfigs {
+        fixed {
+            storeFile file('videohub.keystore')
+            storePassword 'videohub123'
+            keyAlias 'videohub'
+            keyPassword 'videohub123'
+        }
+    }
+
     buildTypes {
+        debug {
+            signingConfig signingConfigs.fixed
+        }
         release {
             minifyEnabled false
+            signingConfig signingConfigs.fixed
         }
     }
 
